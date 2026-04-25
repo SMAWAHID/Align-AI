@@ -1,38 +1,37 @@
 """
-Pydantic v2 schemas — the shared contract between FastAPI backend
+Pydantic v2 schemas — shared contract between FastAPI backend
 and the Next.js frontend (mirrored in types/api.ts).
-
-Validation is strict: extra fields are forbidden so the frontend
-never receives unexpected data that could cause runtime errors.
 """
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 # ─── Sub-models ──────────────────────────────────────────────────────────────
 
+class SkillResource(BaseModel):
+    """A single learning resource for a missing skill."""
+    title: str
+    url: str
+    type: Literal["docs", "course", "video", "tutorial", "other"] = "other"
+
+
+class SkillWithResources(BaseModel):
+    """A missing skill paired with curated learning resources."""
+    skill: str
+    resources: list[SkillResource] = Field(default_factory=list, max_length=4)
+
+
 class GapAnalysisReport(BaseModel):
-    """
-    Structured output from Gemini Flash gap-analysis prompt.
-    Frontend renders each list as an accordion section.
-    """
-    missing_skills: list[str] = Field(
+    """Structured output from the gap analysis LLM call."""
+    missing_skills: list[str] = Field(default_factory=list, max_length=30)
+    skill_resources: list[SkillWithResources] = Field(
         default_factory=list,
-        description="Skills/tools present in JD but absent from resume",
-        max_length=30,
+        description="Curated learning resources per missing skill",
     )
-    improvements: list[str] = Field(
-        default_factory=list,
-        description="Concrete, actionable improvement suggestions",
-        max_length=20,
-    )
-    match_summary: str = Field(
-        default="",
-        description="2-3 sentence overall assessment",
-        max_length=1000,
-    )
+    improvements: list[str] = Field(default_factory=list, max_length=20)
+    match_summary: str = Field(default="", max_length=1000)
 
     @field_validator("missing_skills", "improvements", mode="before")
     @classmethod
@@ -41,37 +40,25 @@ class GapAnalysisReport(BaseModel):
 
 
 class ScoreBreakdown(BaseModel):
-    """Detailed scoring breakdown for the frontend chart."""
-    semantic: float = Field(ge=0, le=100, description="Embedding cosine similarity (0–100)")
-    keyword: float = Field(ge=0, le=100, description="Keyword/phrase overlap (0–100)")
-    final: float = Field(ge=0, le=100, description="Weighted composite score")
+    semantic: float = Field(ge=0, le=100)
+    keyword: float = Field(ge=0, le=100)
+    final: float = Field(ge=0, le=100)
 
 
 # ─── Request / Response ──────────────────────────────────────────────────────
 
 class AnalysisResponse(BaseModel):
-    """
-    Full response from POST /api/v1/analyze.
-    Mirrors frontend AnalysisResult type in types/api.ts.
-    """
     model_config = {"from_attributes": True}
 
     id: int
     filename: str
     score_breakdown: ScoreBreakdown
-    gap_analysis: Optional[GapAnalysisReport] = Field(
-        None,
-        description="Only present when final score < threshold (default 85%)",
-    )
-    ats_resume: Optional[str] = Field(
-        None,
-        description="ATS-optimised resume in Markdown format",
-    )
+    gap_analysis: Optional[GapAnalysisReport] = None
+    ats_resume: Optional[str] = None
     created_at: datetime
 
 
 class HistoryItem(BaseModel):
-    """Lightweight row for the history list."""
     model_config = {"from_attributes": True}
 
     id: int
@@ -82,20 +69,54 @@ class HistoryItem(BaseModel):
 
 
 class HistoryResponse(BaseModel):
-    """Paginated history response."""
     items: list[HistoryItem]
     total: int
     page: int
     page_size: int
 
 
+# ─── Resume enhance / download ───────────────────────────────────────────────
+
+class EnhanceResumeRequest(BaseModel):
+    """Request body for POST /api/v1/resume/enhance"""
+    current_resume: str = Field(
+        ...,
+        min_length=100,
+        description="Current ATS resume in Markdown",
+    )
+    selected_skills: list[str] = Field(
+        default_factory=list,
+        max_length=30,
+        description="Missing skills the user wants incorporated",
+    )
+    selected_improvements: list[str] = Field(
+        default_factory=list,
+        max_length=20,
+        description="Improvement suggestions the user wants applied",
+    )
+    job_description: str = Field(
+        ...,
+        min_length=50,
+        max_length=20_000,
+    )
+
+
+class EnhanceResumeResponse(BaseModel):
+    enhanced_resume: str
+    provider: str
+
+
+class DownloadFormat(str):
+    pass
+
+
+# ─── Errors ──────────────────────────────────────────────────────────────────
+
 class ErrorDetail(BaseModel):
-    """Structured error payload. Never leaks stack traces in production."""
-    code: str = Field(description="Machine-readable error code")
-    message: str = Field(description="Human-readable message")
-    field: Optional[str] = Field(None, description="Offending field, if applicable")
+    code: str
+    message: str
+    field: Optional[str] = None
 
 
 class ErrorResponse(BaseModel):
-    """Envelope for all 4xx / 5xx responses."""
     detail: ErrorDetail

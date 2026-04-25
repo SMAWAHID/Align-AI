@@ -1,12 +1,10 @@
 """
 AlignAI FastAPI Application
-────────────────────────────────────────────────────────────────────────────────
-Entry point: uvicorn main:app --reload --host 0.0.0.0 --port 8000
+Entry: uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 """
 import logging
 import time
 
-import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -17,9 +15,8 @@ from slowapi.util import get_remote_address
 
 from .config import get_settings
 from .database import dispose_db, init_db
-from .routers import analysis_router, history_router
+from .routers import analysis_router, history_router, resume_router
 
-# ─── Logging ─────────────────────────────────────────────────────────────────
 settings = get_settings()
 
 logging.basicConfig(
@@ -28,30 +25,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger("alignai")
 
-# ─── Rate Limiter ─────────────────────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address)
 
-# ─── App ─────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="AlignAI — Semantic Resume Matcher",
-    description=(
-        "AI-powered resume–JD alignment engine using Google Gemini embeddings "
-        "and hybrid semantic + keyword scoring."
-    ),
     version="1.0.0",
-    docs_url="/docs" if settings.is_development else None,
-    redoc_url="/redoc" if settings.is_development else None,
+    docs_url="/docs"    if settings.is_development else None,
+    redoc_url="/redoc"  if settings.is_development else None,
     openapi_url="/openapi.json" if settings.is_development else None,
 )
 
-# Rate limiter state
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-
-# ─── Middleware ───────────────────────────────────────────────────────────────
-
-# CORS — restrict to configured origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
@@ -61,7 +47,6 @@ app.add_middleware(
     max_age=86400,
 )
 
-# Trusted host guard (prevents Host-header injection)
 if not settings.is_development:
     from urllib.parse import urlparse
     trusted = [urlparse(o).hostname for o in settings.allowed_origins_list if o]
@@ -70,7 +55,6 @@ if not settings.is_development:
 
 @app.middleware("http")
 async def request_timing(request: Request, call_next) -> Response:
-    """Attach X-Process-Time header and log slow requests."""
     start = time.perf_counter()
     response: Response = await call_next(request)
     elapsed_ms = (time.perf_counter() - start) * 1000
@@ -82,7 +66,6 @@ async def request_timing(request: Request, call_next) -> Response:
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next) -> Response:
-    """Add security headers to every response."""
     response: Response = await call_next(request)
     response.headers.update({
         "X-Content-Type-Options": "nosniff",
@@ -94,20 +77,12 @@ async def security_headers(request: Request, call_next) -> Response:
     return response
 
 
-# ─── Exception Handlers ───────────────────────────────────────────────────────
-
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Catch-all: never leak stack traces in production."""
     logger.error("Unhandled exception on %s %s: %s", request.method, request.url.path, exc, exc_info=True)
     message = str(exc) if settings.is_development else "An unexpected server error occurred."
-    return JSONResponse(
-        status_code=500,
-        content={"detail": {"code": "INTERNAL_ERROR", "message": message}},
-    )
+    return JSONResponse(status_code=500, content={"detail": {"code": "INTERNAL_ERROR", "message": message}})
 
-
-# ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
 async def startup() -> None:
@@ -118,13 +93,10 @@ async def startup() -> None:
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    logger.info("AlignAI shutting down")
     await dispose_db()
 
 
-# ─── Utility Routes ───────────────────────────────────────────────────────────
-
-@app.get("/health", tags=["meta"], summary="Health check")
+@app.get("/health", tags=["meta"])
 async def health() -> dict:
     return {"status": "ok", "version": "1.0.0"}
 
@@ -134,44 +106,6 @@ async def root() -> dict:
     return {"message": "AlignAI API — see /docs for usage."}
 
 
-# ─── Routers ─────────────────────────────────────────────────────────────────
-
 app.include_router(analysis_router)
 app.include_router(history_router)
-
-
-@app.get("/health/gemini", tags=["meta"], summary="Verify Gemini API key and connectivity")
-async def health_gemini() -> dict:
-    """
-    Quick diagnostic: embeds a short test string and reports which SDK is
-    active, the model used, and vector dimensions returned.
-    Hit this first when debugging EMBEDDING_ERROR.
-    """
-    import asyncio
-    from concurrent.futures import ThreadPoolExecutor
-    from .services.ai_service import _SDK_VERSION, _embed_sync
-
-    _ex = ThreadPoolExecutor(max_workers=1)
-    loop = asyncio.get_event_loop()
-    try:
-        vec = await loop.run_in_executor(_ex, _embed_sync, "health check ping", "RETRIEVAL_QUERY")
-        return {
-            "status": "ok",
-            "sdk_version": _SDK_VERSION,
-            "model": "text-embedding-004",
-            "vector_dimensions": len(vec),
-            "sample_values": vec[:4],
-        }
-    except Exception as exc:
-        return {
-            "status": "error",
-            "sdk_version": _SDK_VERSION,
-            "error_type": type(exc).__name__,
-            "error_detail": str(exc),
-            "fix": (
-                "1. Ensure GEMINI_API_KEY is set in backend/.env\n"
-                "2. Run: pip install google-genai  (or google-generativeai)\n"
-                "3. Check quota at https://aistudio.google.com/\n"
-                "4. Ensure your network can reach generativelanguage.googleapis.com"
-            ),
-        }
+app.include_router(resume_router)
