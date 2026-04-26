@@ -49,8 +49,10 @@ export function analyzeResume({ resume, jobDescription, onProgress }: AnalyzePay
       if (isApiError(body)) { reject(new AlignApiError((body as ApiErrorResponse).detail, xhr.status)); return; }
       reject(new AlignApiError({ code: "HTTP_ERROR", message: `Request failed with status ${xhr.status}` }, xhr.status));
     });
-    xhr.addEventListener("error", () => reject(new AlignApiError({ code: "NETWORK_ERROR", message: "Network error. Please check your connection." }, 0)));
-    xhr.addEventListener("timeout", () => reject(new AlignApiError({ code: "TIMEOUT", message: "Request timed out. Please try again." }, 408)));
+    xhr.addEventListener("error", () =>
+      reject(new AlignApiError({ code: "NETWORK_ERROR", message: "Network error. Please check your connection." }, 0)));
+    xhr.addEventListener("timeout", () =>
+      reject(new AlignApiError({ code: "TIMEOUT", message: "Request timed out. Please try again." }, 408)));
     xhr.open("POST", `${BASE_URL}/analyze`);
     xhr.timeout = 120_000;
     xhr.send(form);
@@ -79,10 +81,10 @@ export async function downloadResume(payload: DownloadRequest): Promise<void> {
   });
   if (!res.ok) throw await parseError(res);
 
-  const blob = await res.blob();
+  const blob        = await res.blob();
   const disposition = res.headers.get("Content-Disposition") ?? "";
-  const match = disposition.match(/filename="?([^"]+)"?/);
-  const filename = match?.[1] ?? `resume.${payload.format}`;
+  const match       = disposition.match(/filename="?([^"]+)"?/);
+  const filename    = match?.[1] ?? `resume.${payload.format}`;
 
   const url = URL.createObjectURL(blob);
   const a   = document.createElement("a");
@@ -109,11 +111,18 @@ export async function deleteHistoryItem(id: number): Promise<void> {
   if (!res.ok && res.status !== 204) throw await parseError(res);
 }
 
-// ─── Validation ───────────────────────────────────────────────────────────────
+// ─── File validation (client-side) ───────────────────────────────────────────
 
 export function validateResumeFile(file: File, maxMb = 10): ErrorDetail | null {
-  if (file.type !== "application/pdf") return { code: "INVALID_TYPE", message: "Please upload a PDF file.", field: "resume" };
-  if (file.size > maxMb * 1024 * 1024) return { code: "FILE_TOO_LARGE", message: `File must be smaller than ${maxMb} MB.`, field: "resume" };
-  if (file.size < 1024) return { code: "FILE_TOO_SMALL", message: "File appears to be empty or corrupt.", field: "resume" };
+  const ext = file.name.split(".").pop()?.toLowerCase();
+  if (!["pdf", "docx", "txt"].includes(ext ?? "")) {
+    return { code: "INVALID_TYPE", message: "Only PDF, DOCX, and TXT files are supported.", field: "resume" };
+  }
+  if (file.size > maxMb * 1024 * 1024) {
+    return { code: "FILE_TOO_LARGE", message: `File must be smaller than ${maxMb} MB.`, field: "resume" };
+  }
+  if (file.size < 512) {
+    return { code: "FILE_TOO_SMALL", message: "File appears to be empty or corrupt.", field: "resume" };
+  }
   return null;
 }

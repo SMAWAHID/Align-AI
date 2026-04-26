@@ -1,17 +1,16 @@
 """
 ATS Resume Builder + Enhancer + Format Converter.
 
-Fixes in this version:
-  - _md_to_pdf: use pdf.epw for multi_cell width (never 0)
-  - _md_to_pdf: sanitise unicode to latin-1 safe chars before rendering
-  - _md_to_pdf: skip blank/whitespace-only lines
-  - _md_to_pdf: truncate extremely long single tokens that exceed cell width
+Output formats:
+  • md   — raw Markdown (no conversion needed)
+  • txt  — strip Markdown syntax
+  • pdf  — ReportLab Platypus (proper Unicode, paragraph flow)
+  • docx — python-docx
 """
 import asyncio
 import io
 import logging
 import re
-import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import HTTPException
@@ -28,17 +27,21 @@ _executor = ThreadPoolExecutor(max_workers=4)
 
 async def build_ats_resume(resume_text: str, jd_text: str, filename: str) -> str:
     prompt = _build_initial_prompt(resume_text, jd_text)
+
+    result = await generate_text(prompt, max_tokens=4096)
+
+    # 🔥 FORCE CLEAN OUTPUT TYPE
+    result = _clean_md(result)
+
+    # ❗ If AI returns JSON, convert it to markdown fallback
     try:
-        result = await generate_text(prompt, max_tokens=4096)
-        return _clean_md(result)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error("build_ats_resume failed: %s", exc, exc_info=True)
-        raise HTTPException(
-            status_code=503,
-            detail={"code": "RESUME_BUILD_ERROR", "message": str(exc)},
-        )
+        parsed = json.loads(result)
+        if isinstance(parsed, dict):
+            result = _json_to_markdown(parsed)
+    except Exception:
+        pass  # it's already markdown
+
+    return result
 
 
 # ─── Enhance existing resume ──────────────────────────────────────────────────
@@ -51,10 +54,7 @@ async def enhance_resume(
 ) -> str:
     if not selected_skills and not selected_improvements:
         return current_resume
-
-    prompt = _build_enhance_prompt(
-        current_resume, selected_skills, selected_improvements, job_description
-    )
+    prompt = _build_enhance_prompt(current_resume, selected_skills, selected_improvements, job_description)
     try:
         result = await generate_text(prompt, max_tokens=4096)
         return _clean_md(result)
@@ -62,16 +62,12 @@ async def enhance_resume(
         raise
     except Exception as exc:
         logger.error("enhance_resume failed: %s", exc, exc_info=True)
-        raise HTTPException(
-            status_code=503,
-            detail={"code": "ENHANCE_ERROR", "message": str(exc)},
-        )
+        raise HTTPException(status_code=503, detail={"code": "ENHANCE_ERROR", "message": str(exc)})
 
 
 # ─── Format conversion ────────────────────────────────────────────────────────
 
 def convert_resume(markdown: str, fmt: str) -> tuple[bytes, str, str]:
-    """Convert Markdown resume to the requested format."""
     fmt = fmt.lower()
     if fmt == "md":
         return markdown.encode("utf-8"), "text/markdown", ".md"
@@ -147,158 +143,186 @@ def _build_enhance_prompt(
 
 RULES:
 1. NEVER fabricate any fact, company, date, role, metric, or credential.
-2. Add selected skills naturally into the Technical Skills section under the correct sub-category.
-   - If the candidate plausibly has exposure from existing roles, weave into bullets.
-   - If no plausible basis exists, add under a "Familiar With" sub-section — never claim proficiency.
+2. Add selected skills naturally into the Technical Skills section.
+   If no plausible basis exists, add under "Familiar With" — never claim proficiency.
 3. Apply each improvement to the relevant resume section.
-4. Keep the same Markdown structure. Do NOT restructure sections not being changed.
+4. Keep the same Markdown structure.
 5. Return ONLY clean Markdown — no preamble, no fences, no commentary."""
 
 
-# ─── TXT converter ───────────────────────────────────────────────────────────
+# ─── TXT ─────────────────────────────────────────────────────────────────────
 
 def _md_to_txt(md: str) -> str:
     text = re.sub(r"^#{1,6}\s+", "", md, flags=re.MULTILINE)
     text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
-    text = re.sub(r"\*(.+?)\*", r"\1", text)
-    text = re.sub(r"^[-*+]\s+", "* ", text, flags=re.MULTILINE)
+    text = re.sub(r"\*(.+?)\*",   r"\1", text)
+    text = re.sub(r"^[-*+]\s+",   "• ", text, flags=re.MULTILINE)
     text = re.sub(r"\[(.+?)\]\(.+?\)", r"\1", text)
     text = re.sub(r"^---+$", "-" * 50, text, flags=re.MULTILINE)
     return text.strip()
 
 
-# ─── PDF converter ────────────────────────────────────────────────────────────
-
-def _sanitise(text: str) -> str:
-    """
-    Convert unicode to closest latin-1 safe representation.
-    fpdf2 with core fonts (Helvetica) only supports latin-1.
-    Replaces smart quotes, em-dashes, bullets, etc.
-    """
-    # Common replacements
-    replacements = {
-        "\u2019": "'", "\u2018": "'", "\u201c": '"', "\u201d": '"',
-        "\u2013": "-", "\u2014": "-", "\u2022": "*", "\u2023": "*",
-        "\u25aa": "*", "\u2026": "...", "\u00a0": " ", "\u2009": " ",
-        "\u2003": "  ", "\u200b": "",
-    }
-    for src, dst in replacements.items():
-        text = text.replace(src, dst)
-
-    # Normalise remaining unicode to closest ASCII
-    try:
-        text = unicodedata.normalize("NFKD", text)
-        text = text.encode("latin-1", errors="replace").decode("latin-1")
-    except Exception:
-        text = text.encode("ascii", errors="replace").decode("ascii")
-    return text
-
+# ─── PDF via ReportLab Platypus ───────────────────────────────────────────────
 
 def _md_to_pdf(md: str) -> bytes:
     """
-    Robust Markdown → PDF using fpdf2.
-    Key fixes:
-      - Always use pdf.epw (effective page width) instead of 0
-      - Sanitise all text to latin-1 before rendering
-      - Skip empty lines safely
-      - Truncate individual words longer than the cell width
+    Converts Markdown resume to a professionally formatted PDF using
+    ReportLab Platypus. Handles full Unicode, proper line wrapping,
+    coloured section headers, and bullet indentation correctly.
     """
     try:
-        from fpdf import FPDF
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_LEFT, TA_CENTER
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import (
+            HRFlowable, ListFlowable, ListItem,
+            Paragraph, SimpleDocTemplate, Spacer,
+        )
     except ImportError:
         raise HTTPException(
             status_code=500,
-            detail={"code": "MISSING_DEP", "message": "fpdf2 not installed. Run: pip install fpdf2"},
+            detail={"code": "MISSING_DEP", "message": "reportlab not installed. Run: pip install reportlab"},
         )
 
-    LEFT_M  = 20.0
-    RIGHT_M = 20.0
-    TOP_M   = 20.0
+    buf = io.BytesIO()
 
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-    pdf.set_left_margin(LEFT_M)
-    pdf.set_right_margin(RIGHT_M)
-    pdf.set_top_margin(TOP_M)
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=20 * mm,
+        rightMargin=20 * mm,
+        topMargin=18 * mm,
+        bottomMargin=18 * mm,
+    )
 
-    # Effective page width = paper width − left margin − right margin
-    EPW = pdf.w - LEFT_M - RIGHT_M
+    # ── Styles ────────────────────────────────────────────────────────────────
+    ACCENT   = colors.HexColor("#2828B4")
+    DARK     = colors.HexColor("#111111")
+    BODY     = colors.HexColor("#333333")
+    MUTED    = colors.HexColor("#555555")
 
-    def safe_cell(text: str, h: float, font: str, style: str, size: float,
-                  color: tuple[int, int, int] = (50, 50, 50)) -> None:
-        """Render a multi_cell with explicit width and sanitised text."""
-        text = _sanitise(text)
-        if not text.strip():
-            pdf.ln(2)
-            return
-        pdf.set_font(font, style, size)
-        pdf.set_text_color(*color)
-        # Chunk any single word longer than EPW into multiple lines
-        # (fpdf2 raises if a single glyph can't fit)
-        try:
-            pdf.multi_cell(EPW, h, text, align="L")
-        except Exception:
-            # Fallback: split into shorter chunks and render word by word
-            for word in text.split():
-                try:
-                    pdf.multi_cell(EPW, h, _sanitise(word), align="L")
-                except Exception:
-                    pass  # Skip truly unrenderable tokens
+    h1_style = ParagraphStyle(
+        "H1", fontName="Helvetica-Bold", fontSize=20,
+        textColor=DARK, spaceAfter=2 * mm, alignment=TA_LEFT,
+    )
+    h2_style = ParagraphStyle(
+        "H2", fontName="Helvetica-Bold", fontSize=13,
+        textColor=ACCENT, spaceBefore=5 * mm, spaceAfter=1 * mm,
+    )
+    h3_style = ParagraphStyle(
+        "H3", fontName="Helvetica-Bold", fontSize=11,
+        textColor=DARK, spaceBefore=3 * mm, spaceAfter=1 * mm,
+    )
+    body_style = ParagraphStyle(
+        "Body", fontName="Helvetica", fontSize=10,
+        textColor=BODY, leading=14, spaceAfter=1 * mm,
+    )
+    bullet_style = ParagraphStyle(
+        "Bullet", fontName="Helvetica", fontSize=10,
+        textColor=BODY, leading=14,
+        leftIndent=10 * mm, firstLineIndent=-4 * mm,
+        spaceAfter=0.8 * mm,
+    )
+    contact_style = ParagraphStyle(
+        "Contact", fontName="Helvetica", fontSize=9,
+        textColor=MUTED, spaceAfter=4 * mm,
+    )
 
-    for raw_line in md.split("\n"):
-        line = raw_line.rstrip()
+    # ── Parse Markdown lines → Flowables ─────────────────────────────────────
+    story: list = []
+    lines = md.split("\n")
+    i = 0
 
-        if not line.strip():
-            pdf.ln(2)
+    def escape(text: str) -> str:
+        """Escape ReportLab XML special chars."""
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    def inline(text: str) -> str:
+        """Convert **bold** to <b>bold</b> for ReportLab paragraphs."""
+        text = escape(text)
+        text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+        text = re.sub(r"\*(.+?)\*",     r"<i>\1</i>", text)
+        # Convert markdown links [label](url) → label (no hyperlinks in basic PDF)
+        text = re.sub(r"\[(.+?)\]\(.+?\)", r"\1", text)
+        return text
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        if not stripped:
+            story.append(Spacer(1, 2 * mm))
+            i += 1
             continue
 
-        if line.startswith("# "):
-            safe_cell(line[2:].strip(), 10, "Helvetica", "B", 18, (15, 15, 15))
-            pdf.ln(1)
+        # H1
+        if stripped.startswith("# "):
+            story.append(Paragraph(escape(stripped[2:].strip()), h1_style))
+            i += 1
+            # Next non-empty line after H1 is usually the contact line
+            if i < len(lines) and lines[i].strip():
+                story.append(Paragraph(inline(lines[i].strip()), contact_style))
+                i += 1
+            continue
 
-        elif line.startswith("## "):
-            pdf.ln(2)
-            safe_cell(line[3:].strip(), 8, "Helvetica", "B", 13, (40, 40, 180))
-            # Underline
-            pdf.set_draw_color(40, 40, 180)
-            pdf.set_line_width(0.3)
-            y = pdf.get_y()
-            pdf.line(LEFT_M, y, LEFT_M + EPW, y)
-            pdf.ln(3)
+        # H2
+        if stripped.startswith("## "):
+            story.append(Paragraph(escape(stripped[3:].strip()), h2_style))
+            story.append(HRFlowable(
+                width="100%", thickness=0.5,
+                color=ACCENT, spaceAfter=2 * mm,
+            ))
+            i += 1
+            continue
 
-        elif line.startswith("### "):
-            pdf.ln(1)
-            safe_cell(line[4:].strip(), 7, "Helvetica", "B", 11, (30, 30, 30))
+        # H3
+        if stripped.startswith("### "):
+            story.append(Paragraph(escape(stripped[4:].strip()), h3_style))
+            i += 1
+            continue
 
-        elif line.startswith(("- ", "* ", "+ ")):
-            content = re.sub(r"\*\*(.+?)\*\*", r"\1", line[2:])
-            pdf.set_font("Helvetica", "", 10)
-            pdf.set_text_color(55, 55, 55)
-            pdf.set_left_margin(LEFT_M + 4)
-            bullet_text = _sanitise(f"*  {content}")
-            try:
-                pdf.multi_cell(EPW - 4, 5, bullet_text, align="L")
-            except Exception:
-                pass
-            pdf.set_left_margin(LEFT_M)
+        # Horizontal rule
+        if re.match(r"^-{3,}$", stripped):
+            story.append(HRFlowable(width="100%", thickness=0.3, color=colors.lightgrey, spaceAfter=2 * mm))
+            i += 1
+            continue
 
-        elif re.match(r"^-{3,}$", line.strip()):
-            pdf.set_draw_color(200, 200, 200)
-            pdf.set_line_width(0.3)
-            y = pdf.get_y()
-            pdf.line(LEFT_M, y, LEFT_M + EPW, y)
-            pdf.ln(3)
+        # Bullet list — collect consecutive bullets
+        if stripped.startswith(("- ", "* ", "+ ")):
+            bullets = []
+            while i < len(lines) and lines[i].strip().startswith(("- ", "* ", "+ ")):
+                content = re.sub(r"^[-*+]\s+", "", lines[i].strip())
+                bullets.append(
+                    ListItem(
+                        Paragraph(inline(content), bullet_style),
+                        bulletColor=ACCENT,
+                        leftIndent=8 * mm,
+                        bulletFontSize=10,
+                    )
+                )
+                i += 1
+            story.append(
+                ListFlowable(
+                    bullets,
+                    bulletType="bullet",
+                    bulletChar="\u2022",
+                    leftIndent=6 * mm,
+                    spaceAfter=1 * mm,
+                )
+            )
+            continue
 
-        else:
-            # Normal paragraph — handle **bold** inline
-            content = re.sub(r"\*\*(.+?)\*\*", r"\1", line)
-            safe_cell(content, 5, "Helvetica", "", 10, (60, 60, 60))
+        # Normal paragraph
+        story.append(Paragraph(inline(stripped), body_style))
+        i += 1
 
-    return bytes(pdf.output())
+    doc.build(story)
+    return buf.getvalue()
 
 
-# ─── DOCX converter ───────────────────────────────────────────────────────────
+# ─── DOCX ─────────────────────────────────────────────────────────────────────
 
 def _md_to_docx(md: str) -> bytes:
     try:
@@ -366,3 +390,19 @@ def _clean_md(text: str) -> str:
     text = re.sub(r"^```(?:markdown)?\s*\n?", "", text.strip(), flags=re.IGNORECASE)
     text = re.sub(r"\n?```\s*$", "", text.strip(), flags=re.IGNORECASE)
     return text.strip()
+
+def _json_to_markdown(data: dict) -> str:
+    resume = data.get("resume", data)
+
+    return f"""
+# {resume.get("Full Name", "")}
+
+## Professional Summary
+{resume.get("Professional Summary", "")}
+
+## Technical Skills
+{resume.get("Technical Skills", "")}
+
+## Projects
+{resume.get("Projects", "")}
+""".strip()

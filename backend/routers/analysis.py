@@ -1,16 +1,6 @@
 """
 POST /api/v1/analyze — core analysis endpoint.
-
-Pipeline:
-  1. Validate file + size
-  2. Extract PDF text in-memory
-  3. Generate embeddings concurrently
-  4. Compute hybrid score
-  5. If score < threshold → gap analysis
-  6. If gap analysis → find skill resources concurrently
-  7. Build ATS resume
-  8. Persist to PostgreSQL
-  9. Return structured response
+Accepts PDF, DOCX, and TXT resumes.
 """
 import logging
 from datetime import datetime, timezone
@@ -30,7 +20,7 @@ from ..services.ai_service import (
     find_skill_resources,
     get_embeddings,
 )
-from ..services.pdf_service import extract_text_from_bytes
+from ..services.document_service import extract_text
 from ..services.resume_builder import build_ats_resume
 
 logger   = logging.getLogger(__name__)
@@ -38,6 +28,15 @@ settings = get_settings()
 limiter  = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/api/v1", tags=["analysis"])
+
+_ACCEPTED_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+    "application/octet-stream",   # browsers sometimes send this for .docx
+}
+
+_ACCEPTED_EXTENSIONS = {".pdf", ".docx", ".txt"}
 
 
 @router.post("/analyze", response_model=AnalysisResponse, summary="Analyse resume against a job description")
@@ -49,51 +48,62 @@ async def analyze(
     db: AsyncSession = Depends(get_db),
 ) -> AnalysisResponse:
 
-    # 1. Validate
-    if resume.content_type not in ("application/pdf", "application/octet-stream"):
-        raise HTTPException(status_code=415, detail={"code": "INVALID_CONTENT_TYPE", "message": "Only PDF files are accepted.", "field": "resume"})
+    # ── 1. Validate file type ─────────────────────────────────────────────────
+    filename  = resume.filename or "resume"
+    name_lower = filename.lower()
+    ext = next((e for e in _ACCEPTED_EXTENSIONS if name_lower.endswith(e)), None)
 
-    pdf_bytes = await resume.read()
-    if not pdf_bytes:
+    if resume.content_type not in _ACCEPTED_TYPES and ext is None:
+        raise HTTPException(
+            status_code=415,
+            detail={
+                "code": "INVALID_CONTENT_TYPE",
+                "message": "Only PDF, DOCX, and TXT files are accepted.",
+                "field": "resume",
+            },
+        )
+
+    file_bytes = await resume.read()
+
+    if not file_bytes:
         raise HTTPException(status_code=400, detail={"code": "EMPTY_FILE", "message": "Uploaded file is empty.", "field": "resume"})
-    if len(pdf_bytes) > settings.max_file_size_bytes:
+    if len(file_bytes) > settings.max_file_size_bytes:
         raise HTTPException(status_code=400, detail={"code": "FILE_TOO_LARGE", "message": f"File exceeds {settings.max_file_size_mb} MB.", "field": "resume"})
 
     jd_text = job_description.strip()
 
-    # 2. Extract PDF text
-    logger.info("Extracting text from %s (%d bytes)", resume.filename, len(pdf_bytes))
-    resume_text = extract_text_from_bytes(pdf_bytes, resume.filename or "resume.pdf")
+    # ── 2. Extract text ────────────────────────────────────────────────────────
+    logger.info("Extracting text from %s (%d bytes)", filename, len(file_bytes))
+    resume_text = extract_text(file_bytes, filename, resume.content_type or "")
 
-    # 3. Embeddings
-    logger.info("Generating embeddings for %s", resume.filename)
+    # ── 3. Embeddings ──────────────────────────────────────────────────────────
+    logger.info("Generating embeddings for %s", filename)
     embeddings = await get_embeddings(resume_text, jd_text)
 
-    # 4. Score
+    # ── 4. Score ───────────────────────────────────────────────────────────────
     score = await calculate_hybrid_score(resume_text, jd_text, embeddings)
     logger.info("Scores — final=%.1f semantic=%.1f keyword=%.1f", score.final, score.semantic, score.keyword)
 
-    # 5+6. Gap analysis + skill resources (concurrent)
-    gap_report = None
+    # ── 5+6. Gap analysis + skill resources ────────────────────────────────────
+    import asyncio
+    gap_report    = None
+    resources_task = None
+
     if score.final < settings.gap_analysis_threshold:
         logger.info("Score %.1f < %.1f — running gap analysis", score.final, settings.gap_analysis_threshold)
-        gap_report = await analyse_gap(resume_text, jd_text, score.missing_tokens, score.final)
-
-        # Fetch skill resources concurrently alongside ATS resume build
-        import asyncio
+        gap_report     = await analyse_gap(resume_text, jd_text, score.missing_tokens, score.final)
         resources_task = asyncio.create_task(find_skill_resources(gap_report.missing_skills))
 
-    # 7. ATS resume
-    logger.info("Building ATS resume for %s", resume.filename)
-    ats_resume_md = await build_ats_resume(resume_text, jd_text, resume.filename or "resume.pdf")
+    # ── 7. ATS resume ──────────────────────────────────────────────────────────
+    logger.info("Building ATS resume for %s", filename)
+    ats_resume_md = await build_ats_resume(resume_text, jd_text, filename)
 
-    # Collect skill resources if gap analysis ran
-    if gap_report is not None:
-        gap_report.skill_resources = await resources_task  # type: ignore[name-defined]
+    if gap_report is not None and resources_task is not None:
+        gap_report.skill_resources = await resources_task
 
-    # 8. Persist
+    # ── 8. Persist ─────────────────────────────────────────────────────────────
     history_row = MatchHistory(
-        filename=resume.filename or "resume.pdf",
+        filename=filename,
         job_description_snippet=jd_text[:500],
         match_score=score.final,
         semantic_score=score.semantic,
@@ -106,10 +116,9 @@ async def analyze(
     await db.flush()
     await db.refresh(history_row)
 
-    # 9. Response
     return AnalysisResponse(
         id=history_row.id,
-        filename=history_row.filename,
+        filename=filename,
         score_breakdown=ScoreBreakdown(semantic=score.semantic, keyword=score.keyword, final=score.final),
         gap_analysis=gap_report,
         ats_resume=ats_resume_md,
