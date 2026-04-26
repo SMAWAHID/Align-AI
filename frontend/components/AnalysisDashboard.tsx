@@ -15,6 +15,8 @@ import { enhanceResume, AlignApiError } from "@/lib/api-client";
 
 interface AnalysisDashboardProps {
   result: AnalysisResponse;
+  /** The original job description text — required for the enhance endpoint */
+  jobDescription: string;
   onReset: () => void;
 }
 
@@ -26,14 +28,14 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "resume", label: "ATS Resume",   icon: <FileText size={15} /> },
 ];
 
-export function AnalysisDashboard({ result, onReset }: AnalysisDashboardProps) {
-  const [activeTab, setActiveTab]               = useState<Tab>("score");
-  const [selectedSkills, setSelectedSkills]     = useState<string[]>([]);
+export function AnalysisDashboard({ result, jobDescription, onReset }: AnalysisDashboardProps) {
+  const [activeTab, setActiveTab]                       = useState<Tab>("score");
+  const [selectedSkills, setSelectedSkills]             = useState<string[]>([]);
   const [selectedImprovements, setSelectedImprovements] = useState<string[]>([]);
-  const [enhancedResume, setEnhancedResume]     = useState<string | null>(null);
-  const [enhancing, setEnhancing]               = useState(false);
-  const [enhanceError, setEnhanceError]         = useState<string | null>(null);
-  const [enhanceDone, setEnhanceDone]           = useState(false);
+  const [enhancedResume, setEnhancedResume]             = useState<string | null>(null);
+  const [enhancing, setEnhancing]                       = useState(false);
+  const [enhanceError, setEnhanceError]                 = useState<string | null>(null);
+  const [enhanceDone, setEnhanceDone]                   = useState(false);
 
   const scoreAboveThreshold = result.score_breakdown.final >= SCORE_THRESHOLDS.excellent;
   const currentResume       = enhancedResume ?? result.ats_resume ?? "";
@@ -51,17 +53,20 @@ export function AnalysisDashboard({ result, onReset }: AnalysisDashboardProps) {
     setEnhanceDone(false);
     try {
       const res = await enhanceResume({
-        current_resume: currentResume,
-        selected_skills: selectedSkills,
-        selected_improvements: selectedImprovements,
-        job_description: result.gap_analysis?.match_summary ?? "",
+        current_resume:         currentResume,
+        selected_skills:        selectedSkills,
+        selected_improvements:  selectedImprovements,
+        job_description:        jobDescription,   // ← fix: real JD, not match_summary
       });
       setEnhancedResume(res.enhanced_resume);
       setEnhanceDone(true);
-      // Auto-switch to resume tab
       setTimeout(() => setActiveTab("resume"), 600);
     } catch (err) {
-      setEnhanceError(err instanceof AlignApiError ? err.detail.message : "Enhancement failed. Please try again.");
+      setEnhanceError(
+        err instanceof AlignApiError
+          ? err.detail.message
+          : "Enhancement failed. Please try again."
+      );
     } finally {
       setEnhancing(false);
     }
@@ -74,16 +79,22 @@ export function AnalysisDashboard({ result, onReset }: AnalysisDashboardProps) {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Sparkles size={14} className="text-indigo-400" />
-            <span className="text-xs font-semibold uppercase tracking-widest text-white/40">Analysis Complete</span>
+            <span className="text-xs font-semibold uppercase tracking-widest text-white/40">
+              Analysis Complete
+            </span>
           </div>
-          <h2 className="text-lg font-bold text-white truncate max-w-[260px]">{result.filename}</h2>
+          <h2 className="text-lg font-bold text-white truncate max-w-[260px]">
+            {result.filename}
+          </h2>
           <div className="flex items-center gap-3 text-xs text-white/35">
             <span className="flex items-center gap-1"><Clock size={11} />{formatDate(result.created_at)}</span>
             <span className="flex items-center gap-1"><Hash size={11} />{result.id}</span>
           </div>
         </div>
-        <button onClick={onReset}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-white/50 hover:text-white hover:bg-white/10 transition-all border border-white/10">
+        <button
+          onClick={onReset}
+          className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-white/50 hover:text-white hover:bg-white/10 transition-all border border-white/10"
+        >
           <RotateCcw size={13} /> New
         </button>
       </div>
@@ -93,23 +104,26 @@ export function AnalysisDashboard({ result, onReset }: AnalysisDashboardProps) {
         <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-3 flex items-center gap-3">
           <Sparkles size={16} className="text-emerald-400 flex-shrink-0" />
           <p className="text-sm text-emerald-300">
-            <strong>Strong match!</strong> Your resume aligns well with this role. Review the ATS resume for final polish.
+            <strong>Strong match!</strong> Your resume aligns well with this role.
           </p>
         </div>
       )}
 
-      {/* ── Enhance action bar (shown when skills/improvements are selected) ── */}
+      {/* ── Enhance action bar ─────────────────────────────────────────── */}
       {hasGapAnalysis(result) && hasSelections && (
         <div className="rounded-xl border border-indigo-500/25 bg-indigo-500/8 px-4 py-3 flex items-center justify-between gap-4">
           <div className="text-sm text-white/70 space-y-0.5">
             <p className="font-medium text-white/90">
-              {selectedSkills.length > 0 && `${selectedSkills.length} skill${selectedSkills.length > 1 ? "s" : ""}`}
+              {selectedSkills.length > 0 &&
+                `${selectedSkills.length} skill${selectedSkills.length > 1 ? "s" : ""}`}
               {selectedSkills.length > 0 && selectedImprovements.length > 0 && " + "}
-              {selectedImprovements.length > 0 && `${selectedImprovements.length} improvement${selectedImprovements.length > 1 ? "s" : ""}`}
+              {selectedImprovements.length > 0 &&
+                `${selectedImprovements.length} improvement${selectedImprovements.length > 1 ? "s" : ""}`}
               {" "}selected
             </p>
             <p className="text-xs text-white/40">These will be woven into your ATS resume</p>
           </div>
+
           <div className="flex items-center gap-3 flex-shrink-0">
             {enhanceDone && (
               <span className="flex items-center gap-1 text-xs text-emerald-400">
@@ -139,24 +153,29 @@ export function AnalysisDashboard({ result, onReset }: AnalysisDashboardProps) {
 
       {/* ── Tabs ────────────────────────────────────────────────────────── */}
       <div className="flex gap-1 bg-white/[0.04] rounded-xl p-1">
-        {TABS.map(tab => {
+        {TABS.map((tab) => {
           const isGapDisabled = tab.id === "gap" && !hasGapAnalysis(result);
           return (
-            <button key={tab.id}
+            <button
+              key={tab.id}
               onClick={() => !isGapDisabled && setActiveTab(tab.id)}
               disabled={isGapDisabled}
               className={cn(
                 "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg",
                 "text-xs font-semibold tracking-wide transition-all duration-150",
-                activeTab === tab.id ? "bg-white/10 text-white shadow-sm"
-                  : isGapDisabled ? "text-white/20 cursor-not-allowed"
+                activeTab === tab.id
+                  ? "bg-white/10 text-white shadow-sm"
+                  : isGapDisabled
+                  ? "text-white/20 cursor-not-allowed"
                   : "text-white/50 hover:text-white/80"
               )}
             >
-              {tab.icon}{tab.label}
+              {tab.icon}
+              {tab.label}
               {tab.id === "gap" && !hasGapAnalysis(result) && scoreAboveThreshold && (
                 <span className="text-[10px] text-white/25 ml-0.5">(N/A)</span>
               )}
+              {/* Green dot when resume has been enhanced */}
               {tab.id === "resume" && enhancedResume && (
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 ml-0.5" />
               )}
@@ -184,7 +203,9 @@ export function AnalysisDashboard({ result, onReset }: AnalysisDashboardProps) {
           ) : (
             <div className="text-center py-12 space-y-2">
               <Sparkles size={32} className="text-emerald-400 mx-auto" />
-              <p className="text-white/60 text-sm">Your score is above 85% — no gap analysis needed!</p>
+              <p className="text-white/60 text-sm">
+                Your score is above 85% — no gap analysis needed!
+              </p>
             </div>
           )
         )}
@@ -198,7 +219,9 @@ export function AnalysisDashboard({ result, onReset }: AnalysisDashboardProps) {
               onEnhanceClick={() => setActiveTab("gap")}
             />
           ) : (
-            <div className="text-center py-12 text-white/40 text-sm">ATS resume not available.</div>
+            <div className="text-center py-12 text-white/40 text-sm">
+              ATS resume not available.
+            </div>
           )
         )}
       </div>

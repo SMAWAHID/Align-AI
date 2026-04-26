@@ -26,11 +26,10 @@ export default function HomePage() {
               AlignAI
             </span>
           </div>
-
           <div className="flex items-center gap-4">
             <div className="hidden sm:flex items-center gap-1.5 text-xs text-white/40">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Gemini Powered
+              Jina + Groq / Gemini
             </div>
             <a
               href="https://github.com"
@@ -51,7 +50,6 @@ export default function HomePage() {
           <Zap size={12} />
           Semantic + Keyword Hybrid Scoring
         </div>
-
         <h1
           className="text-4xl sm:text-5xl font-extrabold text-white mb-4 leading-tight"
           style={{ fontFamily: "'Syne', sans-serif" }}
@@ -62,26 +60,14 @@ export default function HomePage() {
             any job description
           </span>
         </h1>
-
         <p className="max-w-xl mx-auto text-white/50 text-base leading-relaxed">
-          Upload your PDF resume and paste a job description. AlignAI uses
-          Google Gemini embeddings to score semantic alignment, identify skill
-          gaps, and craft an ATS-optimised resume — all in seconds.
+          Upload your PDF resume and paste a job description. AlignAI scores semantic
+          alignment, identifies skill gaps with resource links, and crafts an
+          ATS-optimised resume — downloadable as PDF, Word, Markdown, or plain text.
         </p>
-
-        {/* Feature pills */}
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-          {[
-            "768-dim Gemini Vectors",
-            "Hybrid Scoring",
-            "Gap Analysis",
-            "ATS Resume Builder",
-            "PostgreSQL History",
-          ].map((f) => (
-            <span
-              key={f}
-              className="px-3 py-1 rounded-full text-xs text-white/50 bg-white/[0.04] border border-white/[0.07]"
-            >
+          {["768-dim Vectors","Hybrid Scoring","Gap Analysis","Resource Links","ATS Resume","PDF/Word/MD/TXT"].map(f => (
+            <span key={f} className="px-3 py-1 rounded-full text-xs text-white/50 bg-white/[0.04] border border-white/[0.07]">
               {f}
             </span>
           ))}
@@ -91,43 +77,25 @@ export default function HomePage() {
       {/* ── Main grid ───────────────────────────────────────────────────── */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-6 pb-20">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          {/* Left panel — always shows upload form */}
-          <div
-            className="glass rounded-2xl p-6 sm:p-8"
-            style={{ boxShadow: "0 0 60px rgba(99,102,241,0.04)" }}
-          >
+          {/* Left — upload form */}
+          <div className="glass rounded-2xl p-6 sm:p-8" style={{ boxShadow: "0 0 60px rgba(99,102,241,0.04)" }}>
             <div className="mb-6">
-              <h2
-                className="text-lg font-bold text-white"
-                style={{ fontFamily: "'Syne', sans-serif" }}
-              >
+              <h2 className="text-lg font-bold text-white" style={{ fontFamily: "'Syne', sans-serif" }}>
                 Upload & Analyse
               </h2>
               <p className="text-xs text-white/40 mt-1">
-                Processing is entirely server-side — your PDF is never stored on disk.
+                PDF processing is in-memory — your resume is never stored on disk.
               </p>
             </div>
-            <UploadForm
-              onSubmit={submit}
-              isLoading={isLoading}
-              disabled={isLoading}
-            />
+            <UploadForm onSubmit={submit} isLoading={isLoading} disabled={isLoading} />
           </div>
 
-          {/* Right panel — shows result / stepper / error / placeholder */}
-          <div
-            className="glass rounded-2xl p-6 sm:p-8 min-h-[480px] flex flex-col"
-            style={{ boxShadow: "0 0 60px rgba(139,92,246,0.04)" }}
-          >
-            {state.status === "idle" && (
-              <PlaceholderPanel />
-            )}
+          {/* Right — results */}
+          <div className="glass rounded-2xl p-6 sm:p-8 min-h-[480px] flex flex-col" style={{ boxShadow: "0 0 60px rgba(139,92,246,0.04)" }}>
+            {state.status === "idle" && <PlaceholderPanel />}
 
             {isLoading && (
-              <LoadingStepper
-                status={state.status}
-                uploadProgress={state.uploadProgress}
-              />
+              <LoadingStepper status={state.status} uploadProgress={state.uploadProgress} />
             )}
 
             {state.status === "error" && state.error && (
@@ -139,12 +107,16 @@ export default function HomePage() {
             )}
 
             {state.status === "success" && state.result && (
-              <AnalysisDashboard result={state.result} onReset={reset} />
+              <AnalysisDashboard
+                result={state.result}
+                jobDescription={state.jobDescription}
+                onReset={reset}
+              />
             )}
           </div>
         </div>
 
-        {/* ── How it works ──────────────────────────────────────────────── */}
+        {/* How it works */}
         <section className="mt-16">
           <h2
             className="text-center text-lg font-bold text-white/80 mb-8"
@@ -152,33 +124,29 @@ export default function HomePage() {
           >
             How it works
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
             {PIPELINE_STEPS.map((step, i) => (
-              <div key={i} className="glass rounded-xl p-4 text-center space-y-2">
+              <div key={i} className="glass rounded-xl p-3 text-center space-y-2">
                 <div
-                  className="w-8 h-8 rounded-lg mx-auto flex items-center justify-center text-sm font-bold"
+                  className="w-7 h-7 rounded-lg mx-auto flex items-center justify-center text-xs font-bold"
                   style={{ background: `${step.color}20`, color: step.color }}
                 >
                   {i + 1}
                 </div>
-                <p className="text-xs font-semibold text-white/70">{step.title}</p>
-                <p className="text-[11px] text-white/35 leading-tight">{step.desc}</p>
+                <p className="text-xs font-semibold text-white/70 leading-tight">{step.title}</p>
+                <p className="text-[10px] text-white/30 leading-tight">{step.desc}</p>
               </div>
             ))}
           </div>
         </section>
       </main>
 
-      {/* ── Footer ──────────────────────────────────────────────────────── */}
       <footer className="border-t border-white/[0.05] py-6 text-center text-xs text-white/25">
-        AlignAI · Built with Next.js 15, FastAPI & Google Gemini ·{" "}
-        <span className="font-mono">text-embedding-004</span> + gemini-1.5-flash
+        AlignAI · Next.js 15 + FastAPI + Jina AI + Groq (free) / Gemini (paid)
       </footer>
     </div>
   );
 }
-
-// ─── Supporting components ────────────────────────────────────────────────────
 
 function PlaceholderPanel() {
   return (
@@ -187,20 +155,14 @@ function PlaceholderPanel() {
         <Cpu size={28} className="text-indigo-400/70" />
       </div>
       <div className="space-y-2 max-w-xs">
-        <h3
-          className="text-base font-bold text-white/60"
-          style={{ fontFamily: "'Syne', sans-serif" }}
-        >
+        <h3 className="text-base font-bold text-white/60" style={{ fontFamily: "'Syne', sans-serif" }}>
           Results appear here
         </h3>
         <p className="text-xs text-white/30 leading-relaxed">
-          Upload your resume and paste a job description on the left, then
-          click <strong className="text-white/45">Analyse Resume</strong> to
-          get your match score, gap analysis, and ATS resume.
+          Upload your resume and paste a job description, then click{" "}
+          <strong className="text-white/45">Analyse Resume</strong>.
         </p>
       </div>
-
-      {/* Decorative score ring skeleton */}
       <svg viewBox="0 0 160 160" width={160} height={160} className="opacity-10">
         <circle cx="80" cy="80" r="60" fill="none" stroke="white" strokeWidth="10" strokeDasharray="6 4" />
         <circle cx="80" cy="80" r="40" fill="none" stroke="white" strokeWidth="8" strokeDasharray="4 4" />
@@ -211,10 +173,11 @@ function PlaceholderPanel() {
 }
 
 const PIPELINE_STEPS = [
-  { title: "Upload PDF", desc: "PyMuPDF extracts text in-memory", color: "#6366f1" },
-  { title: "Embed", desc: "text-embedding-004 generates 768-dim vectors", color: "#8b5cf6" },
-  { title: "Score", desc: "Cosine similarity + keyword overlap", color: "#06b6d4" },
-  { title: "Gap Analysis", desc: "Gemini Flash identifies missing skills", color: "#f59e0b" },
-  { title: "ATS Resume", desc: "AI rewrites your resume for the role", color: "#10b981" },
-  { title: "Persist", desc: "Results saved to PostgreSQL", color: "#ef4444" },
+  { title: "Upload PDF",      desc: "PyMuPDF in-memory",              color: "#6366f1" },
+  { title: "Embed",           desc: "Jina / Gemini vectors",          color: "#8b5cf6" },
+  { title: "Score",           desc: "Cosine + keyword",               color: "#06b6d4" },
+  { title: "Gap Analysis",    desc: "Groq / Gemini",                  color: "#f59e0b" },
+  { title: "Skill Links",     desc: "Resources per skill",            color: "#ec4899" },
+  { title: "ATS Resume",      desc: "AI rewrite + enhance",           color: "#10b981" },
+  { title: "Download",        desc: "PDF / Word / MD / TXT",          color: "#ef4444" },
 ];
