@@ -48,7 +48,7 @@ export default function HomePage() {
       <section className="pt-16 pb-10 px-6 text-center">
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-medium mb-6">
           <Zap size={12} />
-          Semantic + Keyword Hybrid Scoring
+          Real-time WebSocket Pipeline · Semantic + Keyword Hybrid Scoring
         </div>
         <h1
           className="text-4xl sm:text-5xl font-extrabold text-white mb-4 leading-tight"
@@ -61,13 +61,23 @@ export default function HomePage() {
           </span>
         </h1>
         <p className="max-w-xl mx-auto text-white/50 text-base leading-relaxed">
-          Upload your PDF resume and paste a job description. AlignAI scores semantic
-          alignment, identifies skill gaps with resource links, and crafts an
-          ATS-optimised resume — downloadable as PDF, Word, Markdown, or plain text.
+          Upload your resume (PDF, DOCX, or TXT) and paste a job description.
+          Watch the pipeline run in real-time via WebSocket — score, gap analysis,
+          resource links, and an ATS-optimised resume ready to download.
         </p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-          {["768-dim Vectors","Hybrid Scoring","Gap Analysis","Resource Links","ATS Resume","PDF/Word/MD/TXT"].map(f => (
-            <span key={f} className="px-3 py-1 rounded-full text-xs text-white/50 bg-white/[0.04] border border-white/[0.07]">
+          {[
+            "WebSocket Live Progress",
+            "PDF · DOCX · TXT Input",
+            "Hybrid Scoring",
+            "Skill Resource Links",
+            "ATS Resume Builder",
+            "PDF/Word/MD/TXT Output",
+          ].map((f) => (
+            <span
+              key={f}
+              className="px-3 py-1 rounded-full text-xs text-white/50 bg-white/[0.04] border border-white/[0.07]"
+            >
               {f}
             </span>
           ))}
@@ -77,25 +87,43 @@ export default function HomePage() {
       {/* ── Main grid ───────────────────────────────────────────────────── */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-6 pb-20">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          {/* Left — upload form */}
-          <div className="glass rounded-2xl p-6 sm:p-8" style={{ boxShadow: "0 0 60px rgba(99,102,241,0.04)" }}>
+          {/* Left — always shows form */}
+          <div
+            className="glass rounded-2xl p-6 sm:p-8"
+            style={{ boxShadow: "0 0 60px rgba(99,102,241,0.04)" }}
+          >
             <div className="mb-6">
-              <h2 className="text-lg font-bold text-white" style={{ fontFamily: "'Syne', sans-serif" }}>
+              <h2
+                className="text-lg font-bold text-white"
+                style={{ fontFamily: "'Syne', sans-serif" }}
+              >
                 Upload & Analyse
               </h2>
               <p className="text-xs text-white/40 mt-1">
-                PDF processing is in-memory — your resume is never stored on disk.
+                In-memory processing · Real-time WebSocket updates
               </p>
             </div>
-            <UploadForm onSubmit={submit} isLoading={isLoading} disabled={isLoading} />
+            <UploadForm
+              onSubmit={submit}
+              isLoading={isLoading}
+              disabled={isLoading}
+            />
           </div>
 
-          {/* Right — results */}
-          <div className="glass rounded-2xl p-6 sm:p-8 min-h-[480px] flex flex-col" style={{ boxShadow: "0 0 60px rgba(139,92,246,0.04)" }}>
+          {/* Right — result / stepper / error / placeholder */}
+          <div
+            className="glass rounded-2xl p-6 sm:p-8 min-h-[480px] flex flex-col"
+            style={{ boxShadow: "0 0 60px rgba(139,92,246,0.04)" }}
+          >
             {state.status === "idle" && <PlaceholderPanel />}
 
             {isLoading && (
-              <LoadingStepper status={state.status} uploadProgress={state.uploadProgress} />
+              <LoadingStepper
+                status={state.status}
+                uploadProgress={state.uploadProgress}
+                serverMessage={state.serverMessage}
+                scorePreview={state.scorePreview}
+              />
             )}
 
             {state.status === "error" && state.error && (
@@ -116,7 +144,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* How it works */}
+        {/* Pipeline steps */}
         <section className="mt-16">
           <h2
             className="text-center text-lg font-bold text-white/80 mb-8"
@@ -142,7 +170,7 @@ export default function HomePage() {
       </main>
 
       <footer className="border-t border-white/[0.05] py-6 text-center text-xs text-white/25">
-        AlignAI · Next.js 15 + FastAPI + Jina AI + Groq (free) / Gemini (paid)
+        AlignAI · Next.js 15 + FastAPI + WebSocket · Jina + Groq (free) / Gemini (paid)
       </footer>
     </div>
   );
@@ -155,12 +183,16 @@ function PlaceholderPanel() {
         <Cpu size={28} className="text-indigo-400/70" />
       </div>
       <div className="space-y-2 max-w-xs">
-        <h3 className="text-base font-bold text-white/60" style={{ fontFamily: "'Syne', sans-serif" }}>
+        <h3
+          className="text-base font-bold text-white/60"
+          style={{ fontFamily: "'Syne', sans-serif" }}
+        >
           Results appear here
         </h3>
         <p className="text-xs text-white/30 leading-relaxed">
           Upload your resume and paste a job description, then click{" "}
           <strong className="text-white/45">Analyse Resume</strong>.
+          Live step-by-step progress will appear here via WebSocket.
         </p>
       </div>
       <svg viewBox="0 0 160 160" width={160} height={160} className="opacity-10">
@@ -173,11 +205,11 @@ function PlaceholderPanel() {
 }
 
 const PIPELINE_STEPS = [
-  { title: "Upload PDF",      desc: "PyMuPDF in-memory",              color: "#6366f1" },
-  { title: "Embed",           desc: "Jina / Gemini vectors",          color: "#8b5cf6" },
-  { title: "Score",           desc: "Cosine + keyword",               color: "#06b6d4" },
-  { title: "Gap Analysis",    desc: "Groq / Gemini",                  color: "#f59e0b" },
-  { title: "Skill Links",     desc: "Resources per skill",            color: "#ec4899" },
-  { title: "ATS Resume",      desc: "AI rewrite + enhance",           color: "#10b981" },
-  { title: "Download",        desc: "PDF / Word / MD / TXT",          color: "#ef4444" },
+  { title: "Upload",        desc: "PDF / DOCX / TXT",         color: "#6366f1" },
+  { title: "Extract",       desc: "PyMuPDF / docx / text",    color: "#8b5cf6" },
+  { title: "Embed",         desc: "Jina / Gemini vectors",    color: "#06b6d4" },
+  { title: "Score",         desc: "Cosine + keyword",         color: "#3b82f6" },
+  { title: "Gap Analysis",  desc: "Groq / Gemini LLM",        color: "#f59e0b" },
+  { title: "ATS Resume",    desc: "AI rewrite + enhance",     color: "#10b981" },
+  { title: "Download",      desc: "PDF / Word / MD / TXT",    color: "#ef4444" },
 ];

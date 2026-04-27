@@ -14,8 +14,11 @@ google-generativeai==0.8.3
 groq==0.13.1
 
 # ── Resume format conversion ──────────────────────────────────────────────
-reportlab==4.2.5       # PDF generation (replaces fpdf2 — proper Unicode + layout)
-python-docx==1.1.2     # DOCX input (resume upload) + DOCX output
+reportlab==4.2.5
+python-docx==1.1.2
+
+# ── WebSocket ─────────────────────────────────────────────────────────────
+websockets==13.1
 
 numpy==2.2.0
 python-dotenv==1.0.1

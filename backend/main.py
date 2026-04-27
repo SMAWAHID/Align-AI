@@ -15,7 +15,7 @@ from slowapi.util import get_remote_address
 
 from .config import get_settings
 from .database import dispose_db, init_db
-from .routers import analysis_router, history_router, resume_router
+from .routers import analysis_router, ws_router, history_router, resume_router
 
 settings = get_settings()
 
@@ -30,8 +30,8 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="AlignAI — Semantic Resume Matcher",
     version="1.0.0",
-    docs_url="/docs"    if settings.is_development else None,
-    redoc_url="/redoc"  if settings.is_development else None,
+    docs_url="/docs"        if settings.is_development else None,
+    redoc_url="/redoc"      if settings.is_development else None,
     openapi_url="/openapi.json" if settings.is_development else None,
 )
 
@@ -60,7 +60,8 @@ async def request_timing(request: Request, call_next) -> Response:
     elapsed_ms = (time.perf_counter() - start) * 1000
     response.headers["X-Process-Time"] = f"{elapsed_ms:.1f}ms"
     if elapsed_ms > 10_000:
-        logger.warning("Slow request: %s %s took %.0fms", request.method, request.url.path, elapsed_ms)
+        logger.warning("Slow request: %s %s took %.0fms",
+                       request.method, request.url.path, elapsed_ms)
     return response
 
 
@@ -69,19 +70,23 @@ async def security_headers(request: Request, call_next) -> Response:
     response: Response = await call_next(request)
     response.headers.update({
         "X-Content-Type-Options": "nosniff",
-        "X-Frame-Options": "DENY",
-        "X-XSS-Protection": "1; mode=block",
-        "Referrer-Policy": "strict-origin-when-cross-origin",
-        "Cache-Control": "no-store",
+        "X-Frame-Options":        "DENY",
+        "X-XSS-Protection":       "1; mode=block",
+        "Referrer-Policy":        "strict-origin-when-cross-origin",
+        "Cache-Control":          "no-store",
     })
     return response
 
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    logger.error("Unhandled exception on %s %s: %s", request.method, request.url.path, exc, exc_info=True)
+    logger.error("Unhandled exception on %s %s: %s",
+                 request.method, request.url.path, exc, exc_info=True)
     message = str(exc) if settings.is_development else "An unexpected server error occurred."
-    return JSONResponse(status_code=500, content={"detail": {"code": "INTERNAL_ERROR", "message": message}})
+    return JSONResponse(
+        status_code=500,
+        content={"detail": {"code": "INTERNAL_ERROR", "message": message}},
+    )
 
 
 @app.on_event("startup")
@@ -106,6 +111,8 @@ async def root() -> dict:
     return {"message": "AlignAI API — see /docs for usage."}
 
 
-app.include_router(analysis_router)
+# Register all routers
+app.include_router(analysis_router)   # POST /api/v1/analyze (HTTP fallback)
+app.include_router(ws_router)         # WS   /api/v1/ws/analyze
 app.include_router(history_router)
 app.include_router(resume_router)
