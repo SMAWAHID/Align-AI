@@ -209,7 +209,9 @@ cp .env.example .env
 # Set DATABASE_URL and GEMINI_API_KEY in .env
 
 # Run (tables auto-created on startup)
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+# go to alignai folder
+cd .. 
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 #### Frontend
