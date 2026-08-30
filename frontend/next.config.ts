@@ -11,6 +11,13 @@ const nextConfig: NextConfig = {
         source: "/api/:path*",
         destination: `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/api/:path*`,
       },
+      // Lets the wake-up probe hit /health in local dev, where NEXT_PUBLIC_API_URL
+      // is unset and requests are same-origin. In production the probe calls the
+      // API's own origin directly and never reaches this rewrite.
+      {
+        source: "/health",
+        destination: `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/health`,
+      },
     ];
   },
 

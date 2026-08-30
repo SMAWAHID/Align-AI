@@ -6,9 +6,13 @@ import { UploadForm } from "@/components/UploadForm";
 import { AnalysisDashboard } from "@/components/AnalysisDashboard";
 import { LoadingStepper } from "@/components/LoadingStepper";
 import { ErrorDisplay } from "@/components/ErrorDisplay";
+import { ServerStatusPill, ServerWakingBanner } from "@/components/ServerStatus";
+import { useServerWakeup } from "@/hooks/useServerWakeup";
 
 export default function HomePage() {
   const { state, submit, reset, isLoading } = useAnalysis();
+  // Starts waking the free-tier API while the visitor reads the hero copy.
+  const serverState = useServerWakeup();
 
   return (
     <div className="min-h-dvh flex flex-col">
@@ -27,10 +31,7 @@ export default function HomePage() {
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <div className="hidden sm:flex items-center gap-1.5 text-xs text-white/40">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Jina + Groq / Gemini
-            </div>
+            <ServerStatusPill state={serverState} />
             <a
               href="https://github.com"
               target="_blank"
@@ -43,6 +44,10 @@ export default function HomePage() {
           </div>
         </div>
       </header>
+
+      <div className="pt-4">
+        <ServerWakingBanner state={serverState} />
+      </div>
 
       {/* ── Hero ────────────────────────────────────────────────────────── */}
       <section className="pt-16 pb-10 px-6 text-center">

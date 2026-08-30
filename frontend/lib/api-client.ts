@@ -8,7 +8,14 @@ import type {
 } from "@/types/api";
 import { isApiError } from "@/types/api";
 
-const BASE_URL = "/api/v1";
+// In production the API lives on a different origin (the Render service), so
+// requests go straight there rather than through the Next.js rewrite — a proxied
+// request would hit the platform's edge timeout while a sleeping free dyno wakes.
+// With NEXT_PUBLIC_API_URL unset (local dev) this stays relative and the rewrite
+// in next.config.ts forwards to localhost:8000 exactly as before.
+export const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
+
+const BASE_URL = `${API_ORIGIN}/api/v1`;
 
 export class AlignApiError extends Error {
   constructor(public readonly detail: ErrorDetail, public readonly status: number) {

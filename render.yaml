@@ -1,0 +1,57 @@
+# Render Blueprint — AlignAI API
+# Deploy: Render dashboard → New → Blueprint → pick this repo.
+# Everything marked `sync: false` must be filled in by hand in the dashboard;
+# Render never reads secrets out of the repo.
+services:
+  - type: web
+    name: alignai-api
+    runtime: python
+    plan: free
+    region: oregon
+
+    # main.py uses package-relative imports (`from .config import ...`), so the
+    # app must be launched as `backend.main:app` from the repo root — running
+    # `main:app` from inside backend/ raises ImportError.
+    buildCommand: pip install --upgrade pip && pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+
+    healthCheckPath: /health
+
+    envVars:
+      # PyMuPDF/numpy wheels are built for 3.12; 3.13 forces a slow source build.
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+
+      # Keep the pool small — free Postgres allows few concurrent connections.
+      - key: DB_POOL_SIZE
+        value: "3"
+      - key: DB_MAX_OVERFLOW
+        value: "2"
+
+      # "*" accepts any Host header. Narrow this to your own hostnames later.
+      - key: ALLOWED_HOSTS
+        value: "*"
+      - key: ENABLE_DOCS
+        value: "true"
+
+      # ── Fill these in the Render dashboard ────────────────────────────────
+      # Neon connection string, pasted exactly as Neon gives it.
+      - key: DATABASE_URL
+        sync: false
+      # Your Vercel frontend URL, no trailing slash. Comma-separate several.
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # Leave GEMINI_API_KEY empty to use the free Groq + Jina path.
+      - key: AI_PROVIDER
+        value: auto
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: JINA_API_KEY
+        sync: false

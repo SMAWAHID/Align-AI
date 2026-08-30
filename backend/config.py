@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file="backend/.env",
+        env_file=("backend/.env", ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
@@ -47,6 +47,21 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
 
+    # ── Deployment ────────────────────────────────────────────────────────────
+    # Hosts TrustedHostMiddleware will accept in production. Comma-separated.
+    # MUST include this API's own public hostname (e.g. the *.onrender.com one),
+    # otherwise health checks and direct API calls are rejected with 400.
+    # "*" disables host checking entirely.
+    allowed_hosts: str = "*"
+
+    # Serve /docs + /redoc even outside development. Handy for a public demo.
+    enable_docs: bool = True
+
+    # SQLAlchemy pool sizing. Free-tier Postgres (Neon) and small dynos have a
+    # low connection ceiling, so these default much lower than a real server.
+    db_pool_size: int = 3
+    db_max_overflow: int = 2
+
     # Scoring weights (must sum to 1.0)
     semantic_weight: float = 0.60
     keyword_weight: float = 0.40
@@ -56,7 +71,11 @@ class Settings(BaseSettings):
 
     @property
     def allowed_origins_list(self) -> list[str]:
-        return [o.strip() for o in self.allowed_origins.split(",")]
+        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+
+    @property
+    def allowed_hosts_list(self) -> list[str]:
+        return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
 
     @property
     def max_file_size_bytes(self) -> int:
