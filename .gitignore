@@ -46,3 +46,5 @@ Thumbs.db
 *.iml
 
 newversion.txt
+# Local throwaway virtualenvs
+.venv*/
