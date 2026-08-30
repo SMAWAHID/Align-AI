@@ -30,9 +30,9 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="AlignAI — Semantic Resume Matcher",
     version="1.0.0",
-    docs_url="/docs"        if settings.is_development else None,
-    redoc_url="/redoc"      if settings.is_development else None,
-    openapi_url="/openapi.json" if settings.is_development else None,
+    docs_url="/docs"            if settings.enable_docs else None,
+    redoc_url="/redoc"          if settings.enable_docs else None,
+    openapi_url="/openapi.json" if settings.enable_docs else None,
 )
 
 app.state.limiter = limiter
@@ -47,10 +47,16 @@ app.add_middleware(
     max_age=86400,
 )
 
-if not settings.is_development:
+if not settings.is_development and settings.allowed_hosts_list != ["*"]:
+    # NOTE: the allow-list is ALLOWED_HOSTS, not ALLOWED_ORIGINS. Deriving it from
+    # the CORS origins (as this previously did) only ever trusted the frontend's
+    # hostname, so the API rejected requests to its own public URL — including the
+    # host platform's health check — with "400 Invalid host header".
     from urllib.parse import urlparse
-    trusted = [urlparse(o).hostname for o in settings.allowed_origins_list if o]
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted)
+
+    trusted = set(settings.allowed_hosts_list)
+    trusted.update(h for h in (urlparse(o).hostname for o in settings.allowed_origins_list) if h)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=sorted(trusted))
 
 
 @app.middleware("http")
@@ -103,6 +109,7 @@ async def shutdown() -> None:
 
 @app.get("/health", tags=["meta"])
 async def health() -> dict:
+    """Liveness probe. Also used by the frontend to wake a sleeping free dyno."""
     return {"status": "ok", "version": "1.0.0"}
 
 
