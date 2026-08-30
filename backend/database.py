@@ -106,12 +106,31 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
+# Base.metadata.create_all only creates MISSING tables — it never alters an
+# existing one. Columns added to a model after its table already exists in a
+# deployed database therefore need an explicit, idempotent statement here.
+_MIGRATIONS: tuple[str, ...] = (
+    # Ownership, added when accounts were introduced. Existing rows predate any
+    # user and stay NULL rather than being deleted.
+    """
+    ALTER TABLE match_history
+        ADD COLUMN IF NOT EXISTS user_id INTEGER
+        REFERENCES users(id) ON DELETE CASCADE
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_match_history_user_id ON match_history (user_id)",
+)
+
+
 async def init_db() -> None:
-    """Create all tables on startup (idempotent)."""
+    """Create tables and apply column migrations on startup (idempotent)."""
+    from sqlalchemy import text
+
     async with engine.begin() as conn:
         # Import models so Base.metadata is populated
         from . import models  # noqa: F401
         await conn.run_sync(Base.metadata.create_all)
+        for statement in _MIGRATIONS:
+            await conn.execute(text(statement))
 
 
 async def dispose_db() -> None:

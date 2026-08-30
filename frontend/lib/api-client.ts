@@ -17,6 +17,37 @@ export const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/,
 
 const BASE_URL = `${API_ORIGIN}/api/v1`;
 
+// ─── Session ─────────────────────────────────────────────────────────────────
+// The JWT lives in localStorage so a refresh keeps you signed in. Reads are
+// guarded because the accessor throws outright in some privacy modes.
+
+const TOKEN_KEY = "alignai_token";
+
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setToken(token: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (token) window.localStorage.setItem(TOKEN_KEY, token);
+    else window.localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* storage unavailable — the session simply will not survive a reload */
+  }
+}
+
+/** Authorization header for the current session, or {} when signed out. */
+function auth(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export class AlignApiError extends Error {
   constructor(public readonly detail: ErrorDetail, public readonly status: number) {
     super(detail.message);
@@ -61,6 +92,8 @@ export function analyzeResume({ resume, jobDescription, onProgress }: AnalyzePay
     xhr.addEventListener("timeout", () =>
       reject(new AlignApiError({ code: "TIMEOUT", message: "Request timed out. Please try again." }, 408)));
     xhr.open("POST", `${BASE_URL}/analyze`);
+    const token = getToken();
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
     xhr.timeout = 120_000;
     xhr.send(form);
   });
@@ -71,7 +104,7 @@ export function analyzeResume({ resume, jobDescription, onProgress }: AnalyzePay
 export async function enhanceResume(payload: EnhanceResumeRequest): Promise<EnhanceResumeResponse> {
   const res = await fetch(`${BASE_URL}/resume/enhance`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...auth() },
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw await parseError(res);
@@ -83,7 +116,7 @@ export async function enhanceResume(payload: EnhanceResumeRequest): Promise<Enha
 export async function downloadResume(payload: DownloadRequest): Promise<void> {
   const res = await fetch(`${BASE_URL}/resume/download`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...auth() },
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw await parseError(res);
@@ -102,19 +135,19 @@ export async function downloadResume(payload: DownloadRequest): Promise<void> {
 // ─── History ──────────────────────────────────────────────────────────────────
 
 export async function fetchHistory(page = 1, pageSize = 10): Promise<HistoryResponse> {
-  const res = await fetch(`${BASE_URL}/history?page=${page}&page_size=${pageSize}`, { cache: "no-store" });
+  const res = await fetch(`${BASE_URL}/history?page=${page}&page_size=${pageSize}`, { cache: "no-store", headers: auth() });
   if (!res.ok) throw await parseError(res);
   return res.json() as Promise<HistoryResponse>;
 }
 
 export async function fetchHistoryItem(id: number): Promise<AnalysisResponse> {
-  const res = await fetch(`${BASE_URL}/history/${id}`, { cache: "no-store" });
+  const res = await fetch(`${BASE_URL}/history/${id}`, { cache: "no-store", headers: auth() });
   if (!res.ok) throw await parseError(res);
   return res.json() as Promise<AnalysisResponse>;
 }
 
 export async function deleteHistoryItem(id: number): Promise<void> {
-  const res = await fetch(`${BASE_URL}/history/${id}`, { method: "DELETE" });
+  const res = await fetch(`${BASE_URL}/history/${id}`, { method: "DELETE", headers: auth() });
   if (!res.ok && res.status !== 204) throw await parseError(res);
 }
 
@@ -132,4 +165,43 @@ export function validateResumeFile(file: File, maxMb = 10): ErrorDetail | null {
     return { code: "FILE_TOO_SMALL", message: "File appears to be empty or corrupt.", field: "resume" };
   }
   return null;
+}
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+export interface AuthUser {
+  id: number;
+  email: string;
+  full_name: string;
+  created_at: string;
+}
+
+interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  user: AuthUser;
+}
+
+async function postAuth(path: string, body: unknown): Promise<TokenResponse> {
+  const res = await fetch(`${BASE_URL}/auth/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json() as Promise<TokenResponse>;
+}
+
+export function signup(email: string, password: string, fullName: string) {
+  return postAuth("signup", { email, password, full_name: fullName });
+}
+
+export function login(email: string, password: string) {
+  return postAuth("login", { email, password });
+}
+
+export async function fetchMe(): Promise<AuthUser> {
+  const res = await fetch(`${BASE_URL}/auth/me`, { cache: "no-store", headers: auth() });
+  if (!res.ok) throw await parseError(res);
+  return res.json() as Promise<AuthUser>;
 }

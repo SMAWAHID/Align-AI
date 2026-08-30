@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
+from ..core.security import CurrentUser
 from ..database import get_db
 from ..models import MatchHistory
 from ..schemas import AnalysisResponse, HistoryItem, HistoryResponse, ScoreBreakdown
@@ -27,17 +28,25 @@ router = APIRouter(prefix="/api/v1/history", tags=["history"])
 @limiter.limit(settings.rate_limit_history)
 async def list_history(
     request: Request,
+    user: CurrentUser,
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
 ) -> HistoryResponse:
     offset = (page - 1) * page_size
 
-    count_q = select(func.count()).select_from(MatchHistory)
+    # Every query is filtered by owner — history is per-account, and the count
+    # must use the same filter or pagination reports other people's rows.
+    count_q = (
+        select(func.count())
+        .select_from(MatchHistory)
+        .where(MatchHistory.user_id == user.id)
+    )
     total: int = (await db.execute(count_q)).scalar_one()
 
     rows_q = (
         select(MatchHistory)
+        .where(MatchHistory.user_id == user.id)
         .order_by(MatchHistory.created_at.desc())
         .offset(offset)
         .limit(page_size)
@@ -63,9 +72,10 @@ async def list_history(
 async def get_history_item(
     request: Request,
     record_id: int,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ) -> AnalysisResponse:
-    row = await _get_or_404(record_id, db)
+    row = await _get_owned_or_404(record_id, user.id, db)
     from ..schemas import GapAnalysisReport
 
     gap = GapAnalysisReport.model_validate(row.gap_analysis) if row.gap_analysis else None
@@ -88,17 +98,24 @@ async def get_history_item(
 async def delete_history_item(
     request: Request,
     record_id: int,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    row = await _get_or_404(record_id, db)
+    row = await _get_owned_or_404(record_id, user.id, db)
     await db.delete(row)
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
-async def _get_or_404(record_id: int, db: AsyncSession) -> MatchHistory:
+async def _get_owned_or_404(record_id: int, user_id: int, db: AsyncSession) -> MatchHistory:
+    """Fetch a record, or 404 if it does not exist OR belongs to someone else.
+
+    Returning 404 rather than 403 for a record owned by another account is
+    deliberate: a 403 would confirm that the id exists, letting anyone map out
+    how many analyses other users have run.
+    """
     result = await db.get(MatchHistory, record_id)
-    if result is None:
+    if result is None or result.user_id != user_id:
         raise HTTPException(
             status_code=404,
             detail={"code": "NOT_FOUND", "message": f"Record {record_id} not found."},

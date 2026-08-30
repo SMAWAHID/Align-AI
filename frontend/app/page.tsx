@@ -1,220 +1,178 @@
-"use client";
+import Link from "next/link";
+import {
+  ArrowRight,
+  Cpu,
+  FileText,
+  Github,
+  Layers,
+  Lock,
+  ScanSearch,
+  Sparkles,
+  Target,
+} from "lucide-react";
 
-import { Cpu, Github, Zap } from "lucide-react";
-import { useAnalysis } from "@/hooks/useAnalysis";
-import { UploadForm } from "@/components/UploadForm";
-import { AnalysisDashboard } from "@/components/AnalysisDashboard";
-import { LoadingStepper } from "@/components/LoadingStepper";
-import { ErrorDisplay } from "@/components/ErrorDisplay";
-import { ServerStatusPill, ServerWakingBanner } from "@/components/ServerStatus";
-import { useServerWakeup } from "@/hooks/useServerWakeup";
+export const metadata = {
+  title: "AlignAI — Semantic Resume Matcher",
+  description:
+    "Score your resume against any job description, see exactly which skills are missing, and get an ATS-optimised rewrite back.",
+};
 
-export default function HomePage() {
-  const { state, submit, reset, isLoading } = useAnalysis();
-  // Starts waking the free-tier API while the visitor reads the hero copy.
-  const serverState = useServerWakeup();
+const PIPELINE = [
+  { icon: FileText, title: "Extract", body: "PDF, DOCX or plain text is parsed in memory. Nothing is written to disk." },
+  { icon: ScanSearch, title: "Embed", body: "Resume and job description become 1024-dimension vectors." },
+  { icon: Target, title: "Score", body: "Cosine similarity, weighted 60/40 against literal keyword overlap." },
+  { icon: Layers, title: "Analyse", body: "An LLM names the missing skills and where to learn each one." },
+  { icon: Sparkles, title: "Rewrite", body: "You get an ATS-friendly resume back as PDF, Word, Markdown or text." },
+];
 
+const SYNE = { fontFamily: "'Syne', sans-serif" } as const;
+
+export default function LandingPage() {
   return (
     <div className="min-h-dvh flex flex-col">
-      {/* ── Nav ─────────────────────────────────────────────────────────── */}
+      {/* Nav */}
       <header className="sticky top-0 z-50 border-b border-white/[0.06] backdrop-blur-xl bg-[#08090e]/80">
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
               <Cpu size={14} className="text-white" />
             </div>
-            <span
-              className="font-bold text-white tracking-tight"
-              style={{ fontFamily: "'Syne', sans-serif", fontSize: "1.05rem" }}
-            >
+            <span className="font-bold text-white tracking-tight" style={{ ...SYNE, fontSize: "1.05rem" }}>
               AlignAI
             </span>
           </div>
-          <div className="flex items-center gap-4">
-            <ServerStatusPill state={serverState} />
+          <nav className="flex items-center gap-5">
             <a
-              href="https://github.com"
+              href="https://github.com/SMAWAHID/Align-AI"
               target="_blank"
               rel="noopener noreferrer"
               className="text-white/30 hover:text-white/60 transition-colors"
-              aria-label="GitHub"
+              aria-label="Source on GitHub"
             >
               <Github size={17} />
             </a>
-          </div>
+            <Link href="/login" className="text-sm text-white/50 hover:text-white transition-colors">
+              Sign in
+            </Link>
+            <Link
+              href="/signup"
+              className="text-sm font-semibold text-white bg-white/[0.07] hover:bg-white/[0.12] border border-white/10 rounded-lg px-3.5 py-1.5 transition-colors"
+            >
+              Get started
+            </Link>
+          </nav>
         </div>
       </header>
 
-      <div className="pt-4">
-        <ServerWakingBanner state={serverState} />
-      </div>
-
-      {/* ── Hero ────────────────────────────────────────────────────────── */}
-      <section className="pt-16 pb-10 px-6 text-center">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-medium mb-6">
-          <Zap size={12} />
-          Real-time WebSocket Pipeline · Semantic + Keyword Hybrid Scoring
+      {/* Hero */}
+      <section className="px-6 pt-20 pb-16 text-center">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-medium mb-7">
+          <Sparkles size={12} />
+          Semantic scoring, not keyword counting
         </div>
+
         <h1
-          className="text-4xl sm:text-5xl font-extrabold text-white mb-4 leading-tight"
-          style={{ fontFamily: "'Syne', sans-serif" }}
+          className="mx-auto max-w-3xl text-4xl sm:text-5xl lg:text-6xl font-bold text-white leading-[1.08] tracking-tight text-balance"
+          style={SYNE}
         >
-          Match your resume to
-          <br />
-          <span className="bg-gradient-to-r from-indigo-400 via-violet-400 to-cyan-400 bg-clip-text text-transparent">
-            any job description
+          Find out why your resume
+          <span className="block bg-gradient-to-r from-indigo-400 via-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+            keeps getting filtered out
           </span>
         </h1>
-        <p className="max-w-xl mx-auto text-white/50 text-base leading-relaxed">
-          Upload your resume (PDF, DOCX, or TXT) and paste a job description.
-          Watch the pipeline run in real-time via WebSocket — score, gap analysis,
-          resource links, and an ATS-optimised resume ready to download.
+
+        <p className="mx-auto mt-6 max-w-xl text-base sm:text-lg text-white/45 leading-relaxed">
+          Paste a job description, upload your resume, and get a match score backed by real
+          semantic similarity — plus the specific skills you are missing and an ATS-optimised
+          rewrite you can download.
         </p>
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-          {[
-            "WebSocket Live Progress",
-            "PDF · DOCX · TXT Input",
-            "Hybrid Scoring",
-            "Skill Resource Links",
-            "ATS Resume Builder",
-            "PDF/Word/MD/TXT Output",
-          ].map((f) => (
-            <span
-              key={f}
-              className="px-3 py-1 rounded-full text-xs text-white/50 bg-white/[0.04] border border-white/[0.07]"
-            >
-              {f}
-            </span>
-          ))}
+
+        <div className="mt-9 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <Link
+            href="/signup"
+            className="w-full sm:w-auto h-11 px-6 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25 hover:opacity-90 transition-opacity"
+          >
+            Analyse my resume
+            <ArrowRight size={15} />
+          </Link>
+          <Link
+            href="/login"
+            className="w-full sm:w-auto h-11 px-6 rounded-lg border border-white/10 bg-white/[0.03] text-white/70 text-sm font-semibold inline-flex items-center justify-center hover:bg-white/[0.06] hover:text-white transition-colors"
+          >
+            I already have an account
+          </Link>
+        </div>
+
+        <p className="mt-5 text-xs text-white/25">Free · no card · your files are never stored</p>
+      </section>
+
+      {/* Pipeline — numbered because these steps genuinely run in order */}
+      <section className="px-6 pb-20">
+        <div className="max-w-5xl mx-auto">
+          <h2
+            className="text-center text-xs font-medium uppercase tracking-[0.16em] text-white/30 mb-9"
+            style={SYNE}
+          >
+            What happens when you hit analyse
+          </h2>
+
+          <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {PIPELINE.map(({ icon: Icon, title, body }, i) => (
+              <li
+                key={title}
+                className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 flex flex-col gap-2.5"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+                    <Icon size={13} className="text-indigo-300" />
+                  </div>
+                  <span className="text-[10px] font-mono text-white/25 tabular-nums">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                </div>
+                <h3 className="text-sm font-semibold text-white/90">{title}</h3>
+                <p className="text-xs text-white/40 leading-relaxed">{body}</p>
+              </li>
+            ))}
+          </ol>
         </div>
       </section>
 
-      {/* ── Main grid ───────────────────────────────────────────────────── */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-6 pb-20">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          {/* Left — always shows form */}
-          <div
-            className="glass rounded-2xl p-6 sm:p-8"
-            style={{ boxShadow: "0 0 60px rgba(99,102,241,0.04)" }}
-          >
-            <div className="mb-6">
-              <h2
-                className="text-lg font-bold text-white"
-                style={{ fontFamily: "'Syne', sans-serif" }}
-              >
-                Upload & Analyse
+      {/* Privacy */}
+      <section className="px-6 pb-24">
+        <div className="max-w-3xl mx-auto rounded-2xl border border-white/[0.07] bg-white/[0.02] p-7 sm:p-9">
+          <div className="flex items-start gap-4">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
+              <Lock size={16} className="text-emerald-300" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white mb-2" style={SYNE}>
+                Your analyses belong to you
               </h2>
-              <p className="text-xs text-white/40 mt-1">
-                In-memory processing · Real-time WebSocket updates
+              <p className="text-sm text-white/45 leading-relaxed">
+                Every result is tied to your account, and history queries are filtered by owner —
+                nobody else can list, open or delete your analyses. Uploaded files are parsed in
+                memory and discarded; only the scores, the gap report and your rewritten resume
+                are stored.
               </p>
             </div>
-            <UploadForm
-              onSubmit={submit}
-              isLoading={isLoading}
-              disabled={isLoading}
-            />
-          </div>
-
-          {/* Right — result / stepper / error / placeholder */}
-          <div
-            className="glass rounded-2xl p-6 sm:p-8 min-h-[480px] flex flex-col"
-            style={{ boxShadow: "0 0 60px rgba(139,92,246,0.04)" }}
-          >
-            {state.status === "idle" && <PlaceholderPanel />}
-
-            {isLoading && (
-              <LoadingStepper
-                status={state.status}
-                uploadProgress={state.uploadProgress}
-                serverMessage={state.serverMessage}
-                scorePreview={state.scorePreview}
-              />
-            )}
-
-            {state.status === "error" && state.error && (
-              <div className="flex-1 flex items-center justify-center">
-                <div className="w-full max-w-sm">
-                  <ErrorDisplay error={state.error} onRetry={reset} />
-                </div>
-              </div>
-            )}
-
-            {state.status === "success" && state.result && (
-              <AnalysisDashboard
-                result={state.result}
-                jobDescription={state.jobDescription}
-                onReset={reset}
-              />
-            )}
           </div>
         </div>
+      </section>
 
-        {/* Pipeline steps */}
-        <section className="mt-16">
-          <h2
-            className="text-center text-lg font-bold text-white/80 mb-8"
-            style={{ fontFamily: "'Syne', sans-serif" }}
+      <footer className="mt-auto border-t border-white/[0.06] px-6 py-6">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-white/25">
+          <span>AlignAI · Next.js + FastAPI + PostgreSQL · Jina embeddings, Groq inference</span>
+          <a
+            href="https://github.com/SMAWAHID/Align-AI"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-white/50 transition-colors"
           >
-            How it works
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
-            {PIPELINE_STEPS.map((step, i) => (
-              <div key={i} className="glass rounded-xl p-3 text-center space-y-2">
-                <div
-                  className="w-7 h-7 rounded-lg mx-auto flex items-center justify-center text-xs font-bold"
-                  style={{ background: `${step.color}20`, color: step.color }}
-                >
-                  {i + 1}
-                </div>
-                <p className="text-xs font-semibold text-white/70 leading-tight">{step.title}</p>
-                <p className="text-[10px] text-white/30 leading-tight">{step.desc}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      </main>
-
-      <footer className="border-t border-white/[0.05] py-6 text-center text-xs text-white/25">
-        AlignAI · Next.js 15 + FastAPI + WebSocket · Jina + Groq (free) / Gemini (paid)
+            Source on GitHub
+          </a>
+        </div>
       </footer>
     </div>
   );
 }
-
-function PlaceholderPanel() {
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center text-center space-y-5 py-8">
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-white/10">
-        <Cpu size={28} className="text-indigo-400/70" />
-      </div>
-      <div className="space-y-2 max-w-xs">
-        <h3
-          className="text-base font-bold text-white/60"
-          style={{ fontFamily: "'Syne', sans-serif" }}
-        >
-          Results appear here
-        </h3>
-        <p className="text-xs text-white/30 leading-relaxed">
-          Upload your resume and paste a job description, then click{" "}
-          <strong className="text-white/45">Analyse Resume</strong>.
-          Live step-by-step progress will appear here via WebSocket.
-        </p>
-      </div>
-      <svg viewBox="0 0 160 160" width={160} height={160} className="opacity-10">
-        <circle cx="80" cy="80" r="60" fill="none" stroke="white" strokeWidth="10" strokeDasharray="6 4" />
-        <circle cx="80" cy="80" r="40" fill="none" stroke="white" strokeWidth="8" strokeDasharray="4 4" />
-        <text x="80" y="85" textAnchor="middle" fill="white" fontSize="24" fontFamily="monospace">—</text>
-      </svg>
-    </div>
-  );
-}
-
-const PIPELINE_STEPS = [
-  { title: "Upload",        desc: "PDF / DOCX / TXT",         color: "#6366f1" },
-  { title: "Extract",       desc: "PyMuPDF / docx / text",    color: "#8b5cf6" },
-  { title: "Embed",         desc: "Jina / Gemini vectors",    color: "#06b6d4" },
-  { title: "Score",         desc: "Cosine + keyword",         color: "#3b82f6" },
-  { title: "Gap Analysis",  desc: "Groq / Gemini LLM",        color: "#f59e0b" },
-  { title: "ATS Resume",    desc: "AI rewrite + enhance",     color: "#10b981" },
-  { title: "Download",      desc: "PDF / Word / MD / TXT",    color: "#ef4444" },
-];

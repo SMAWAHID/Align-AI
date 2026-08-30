@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
 
+    # ── Auth ──────────────────────────────────────────────────────────────────
+    # Signs the JWTs handed to the browser. MUST be overridden in production —
+    # anyone holding this value can mint a token for any account.
+    secret_key: str = "CHANGE_ME_IN_PRODUCTION"
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60 * 24 * 7  # a week; this is not a bank
+
     # ── Deployment ────────────────────────────────────────────────────────────
     # Hosts TrustedHostMiddleware will accept in production. Comma-separated.
     # MUST include this API's own public hostname (e.g. the *.onrender.com one),

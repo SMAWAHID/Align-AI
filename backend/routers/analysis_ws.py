@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
 from ..database import AsyncSessionLocal
-from ..models import MatchHistory
+from ..models import MatchHistory, User
 from ..schemas import AnalysisResponse, ScoreBreakdown
 from ..services.ai_service import (
     analyse_gap,
@@ -59,6 +59,14 @@ STEP_MESSAGES = {
 async def ws_analyze(websocket: WebSocket) -> None:
     await websocket.accept()
     logger.info("WebSocket connection accepted from %s", websocket.client)
+
+    # Browsers cannot set an Authorization header on a WebSocket handshake, so
+    # the token arrives as a query parameter. Authenticate before doing any work
+    # — otherwise this route is an unauthenticated way to spend AI quota and to
+    # write history rows that belong to nobody.
+    user_id = await _authenticate(websocket)
+    if user_id is None:
+        return
 
     async def send(event: str, **kwargs) -> None:
         """Send a JSON event to the client."""
@@ -181,6 +189,7 @@ async def ws_analyze(websocket: WebSocket) -> None:
         await status("saving")
         async with AsyncSessionLocal() as db:
             history_row = MatchHistory(
+                user_id=user_id,
                 filename=filename,
                 job_description_snippet=job_description[:500],
                 match_score=score.final,
@@ -228,3 +237,49 @@ async def ws_analyze(websocket: WebSocket) -> None:
             await websocket.close()
         except Exception:
             pass
+
+
+async def _authenticate(websocket: WebSocket) -> int | None:
+    """Resolve ?token=... to a user id, closing the socket if it is not valid.
+
+    Returns None when the caller has already been rejected.
+    """
+    import jwt
+
+    from ..config import get_settings
+    from ..database import AsyncSessionLocal
+
+    settings = get_settings()
+    token = websocket.query_params.get("token")
+
+    async def reject(message: str) -> None:
+        try:
+            await websocket.send_json(
+                {"event": "error", "code": "UNAUTHORIZED", "message": message}
+            )
+            # 1008 = policy violation, the closest WebSocket close code to 401.
+            await websocket.close(code=1008)
+        except Exception:
+            pass
+
+    if not token:
+        await reject("Sign in to run an analysis.")
+        return None
+
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        user_id = int(payload["sub"])
+    except jwt.ExpiredSignatureError:
+        await reject("Your session has expired. Please sign in again.")
+        return None
+    except (jwt.PyJWTError, KeyError, TypeError, ValueError):
+        await reject("Invalid session. Please sign in again.")
+        return None
+
+    async with AsyncSessionLocal() as db:
+        user = await db.get(User, user_id)
+        if user is None or not user.is_active:
+            await reject("Account not found or disabled.")
+            return None
+
+    return user_id

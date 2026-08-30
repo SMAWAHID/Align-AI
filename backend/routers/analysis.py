@@ -11,6 +11,7 @@ from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
+from ..core.security import CurrentUser
 from ..database import get_db
 from ..models import MatchHistory
 from ..schemas import AnalysisResponse, ScoreBreakdown
@@ -43,6 +44,7 @@ _ACCEPTED_EXTENSIONS = {".pdf", ".docx", ".txt"}
 @limiter.limit(settings.rate_limit_analyze)
 async def analyze(
     request: Request,
+    user: CurrentUser,
     resume: UploadFile = File(...),
     job_description: str = Form(..., min_length=50, max_length=20_000),
     db: AsyncSession = Depends(get_db),
@@ -103,6 +105,7 @@ async def analyze(
 
     # ── 8. Persist ─────────────────────────────────────────────────────────────
     history_row = MatchHistory(
+        user_id=user.id,
         filename=filename,
         job_description_snippet=jd_text[:500],
         match_score=score.final,
