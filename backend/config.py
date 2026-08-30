@@ -28,8 +28,17 @@ class Settings(BaseSettings):
     # Jina AI (free embeddings fallback — 1M tokens/month)
     jina_api_key: str = ""
 
-    # Groq (free generation fallback — llama-3.3-70b-versatile)
+    # Groq (free generation fallback)
     groq_api_key: str = ""
+
+    # Groq retires hosted models on a rolling basis — llama-3.3-70b-versatile
+    # was decommissioned and every request 503'd against a hardcoded name.
+    # Overridable so a retirement is an env change, not a code change.
+    # Current list: https://console.groq.com/docs/models
+    groq_model: str = "openai/gpt-oss-120b"
+
+    # Jina embedding model
+    jina_model: str = "jina-embeddings-v3"
 
     # CORS
     allowed_origins: str = "http://localhost:3000"

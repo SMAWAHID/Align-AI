@@ -46,8 +46,8 @@ if _PROVIDER == "fallback":
     from groq import Groq as _Groq
     _groq_client  = _Groq(api_key=settings.groq_api_key)
     _JINA_API_URL = "https://api.jina.ai/v1/embeddings"
-    _JINA_MODEL   = "jina-embeddings-v3"
-    _GROQ_MODEL   = "llama-3.3-70b-versatile"
+    _JINA_MODEL   = settings.jina_model
+    _GROQ_MODEL   = settings.groq_model
 
 
 # ─── Result containers ────────────────────────────────────────────────────────

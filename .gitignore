@@ -48,3 +48,5 @@ Thumbs.db
 newversion.txt
 # Local throwaway virtualenvs
 .venv*/
+
+.vercel
