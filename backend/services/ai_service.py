@@ -142,11 +142,15 @@ async def find_skill_resources(missing_skills: list[str]) -> list[SkillWithResou
 
 
 async def generate_text(prompt: str, max_tokens: int = 4096) -> str:
-    """Generic text generation for resume builder."""
+    """Markdown generation for the resume builder and enhancer (NOT JSON mode).
+
+    The JSON-only system prompt used for gap analysis made the model wrap resumes in JSON,
+    which then broke the ATS resume ("#" or raw JSON) and every enhance/download after it.
+    """
     loop = asyncio.get_event_loop()
     fn   = _gemini_generate if _PROVIDER == "gemini" else _groq_generate
     try:
-        return await loop.run_in_executor(_executor, lambda: fn(prompt, max_tokens=max_tokens))
+        return await loop.run_in_executor(_executor, lambda: fn(prompt, max_tokens=max_tokens, json_mode=False))
     except Exception as exc:
         msg = (
             f"[{_PROVIDER}] Generation error ({type(exc).__name__}): {exc}"
@@ -166,11 +170,12 @@ def _gemini_embed(text: str, task_type: str) -> list[float]:
         logger.error("Gemini embed failed [task=%s]: %s", task_type, exc, exc_info=True)
         raise
 
-def _gemini_generate(prompt: str, max_tokens: int = 2048) -> str:
+def _gemini_generate(prompt: str, max_tokens: int = 2048, json_mode: bool = True) -> str:
     try:
         model = _genai.GenerativeModel(_GEMINI_GEN_MODEL)
+        extra = {"response_mime_type": "application/json"} if json_mode else {}
         resp  = model.generate_content(prompt, generation_config=_genai.GenerationConfig(
-            temperature=0.1, max_output_tokens=max_tokens, response_mime_type="application/json"))
+            temperature=0.1, max_output_tokens=max_tokens, **extra))
         return resp.text
     except Exception as exc:
         logger.error("Gemini generate failed: %s", exc, exc_info=True)
@@ -193,12 +198,19 @@ def _jina_embed(text: str, task: str) -> list[float]:
 
 # ─── Private: Groq ────────────────────────────────────────────────────────────
 
-def _groq_generate(prompt: str, max_tokens: int = 2048) -> str:
+_JSON_SYSTEM = "You are a JSON-only API. Respond ONLY with a valid JSON object. No markdown fences, no preamble."
+_MARKDOWN_SYSTEM = (
+    "You are an expert resume writer. Respond ONLY with the resume as clean Markdown. "
+    "Never wrap it in JSON or code fences, and add no preamble or commentary."
+)
+
+
+def _groq_generate(prompt: str, max_tokens: int = 2048, json_mode: bool = True) -> str:
     try:
         resp = _groq_client.chat.completions.create(
             model=_GROQ_MODEL,
             messages=[
-                {"role": "system", "content": "You are a JSON-only API. Respond ONLY with a valid JSON object. No markdown fences, no preamble."},
+                {"role": "system", "content": _JSON_SYSTEM if json_mode else _MARKDOWN_SYSTEM},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.1, max_tokens=max_tokens)

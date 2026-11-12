@@ -30,17 +30,38 @@ _executor = ThreadPoolExecutor(max_workers=4)
 async def build_ats_resume(resume_text: str, jd_text: str, filename: str) -> str:
     prompt = _build_initial_prompt(resume_text, jd_text)
     result = await generate_text(prompt, max_tokens=4096)
-    result = _clean_md(result)
+    return _to_markdown(result)
 
-    # If AI returns JSON despite instructions, convert it to markdown
+
+def _to_markdown(raw: str) -> str:
+    """Return the model's reply as resume Markdown.
+
+    Models sometimes wrap the resume in JSON despite instructions. Handle the shapes seen in
+    practice instead of failing silently: {"resume": "<markdown>"} (unwrap the string),
+    {"resume": {...structured...}} or {...structured...} (render it), or a JSON string.
+    If structured rendering yields almost nothing, keep the original text rather than
+    returning an empty "#" resume that breaks enhance/download downstream.
+    """
+    text = _clean_md(raw)
     try:
-        parsed = json.loads(result)
-        if isinstance(parsed, dict):
-            result = _json_to_markdown(parsed)
+        parsed = json.loads(text)
     except Exception:
-        pass  # already markdown
-
-    return result
+        return text  # already Markdown
+    if isinstance(parsed, str):
+        return _clean_md(parsed)
+    if isinstance(parsed, dict):
+        inner = parsed.get("resume")
+        if isinstance(inner, str):
+            return _clean_md(inner)
+        try:
+            rendered = _json_to_markdown(parsed)
+        except Exception as exc:
+            logger.warning("Could not render JSON resume (%s); keeping raw text", exc)
+            return text
+        if len(rendered) >= 100:
+            return rendered
+        logger.warning("Rendered JSON resume was nearly empty (%d chars); keeping raw text", len(rendered))
+    return text
 
 
 # ─── Enhance existing resume ──────────────────────────────────────────────────
@@ -58,17 +79,7 @@ async def enhance_resume(
     )
     try:
         result = await generate_text(prompt, max_tokens=4096)
-        result = _clean_md(result)
-
-        # If AI returns JSON despite instructions, convert it to markdown
-        try:
-            parsed = json.loads(result)
-            if isinstance(parsed, dict):
-                result = _json_to_markdown(parsed)
-        except Exception:
-            pass  # already markdown
-
-        return result
+        return _to_markdown(result)
     except HTTPException:
         raise
     except Exception as exc:
