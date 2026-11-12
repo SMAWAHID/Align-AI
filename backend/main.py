@@ -49,7 +49,9 @@ app.add_middleware(
     allow_origins=settings.allowed_origins_list,
     allow_credentials=False,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Accept", "X-Request-ID"],
+    # Authorization carries the signed-in user's Bearer token. Without it here, browsers
+    # block every authenticated request at the CORS preflight ("Network error" in the UI).
+    allow_headers=["Content-Type", "Accept", "X-Request-ID", "Authorization"],
     max_age=86400,
 )
 
