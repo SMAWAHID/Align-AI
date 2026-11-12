@@ -175,6 +175,11 @@ function _buildWsUrl(): string {
 }
 
 async function _checkWsAvailable(): Promise<boolean> {
+  // Serverless hosts (Vercel, Lambda) cannot hold a socket open, so the live
+  // progress channel is opt-out via NEXT_PUBLIC_ENABLE_WS=false. Without this
+  // every analysis burns a doomed connection attempt and its timeout before
+  // falling back to HTTP. Unset, behaviour is unchanged: WebSocket first.
+  if (process.env.NEXT_PUBLIC_ENABLE_WS === "false") return false;
   return typeof WebSocket !== "undefined";
 }
 

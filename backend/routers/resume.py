@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import get_settings
 from ..database import get_db
 from ..models import MatchHistory
+from ..core.security import CurrentUser
 from ..schemas import EnhanceResumeRequest, EnhanceResumeResponse
 from ..services.ai_service import _PROVIDER
 from ..services.resume_builder import convert_resume, enhance_resume
@@ -37,6 +38,7 @@ router = APIRouter(prefix="/api/v1/resume", tags=["resume"])
 @limiter.limit("10/minute")
 async def enhance(
     request: Request,
+    user: CurrentUser,
     body: EnhanceResumeRequest,
     db: AsyncSession = Depends(get_db),
 ) -> EnhanceResumeResponse:
@@ -69,6 +71,7 @@ class DownloadRequest(BaseModel):
 @limiter.limit("20/minute")
 async def download(
     request: Request,
+    user: CurrentUser,
     body: DownloadRequest,
 ) -> Response:
     try:

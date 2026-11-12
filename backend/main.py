@@ -15,7 +15,13 @@ from slowapi.util import get_remote_address
 
 from .config import get_settings
 from .database import dispose_db, init_db
-from .routers import analysis_router, ws_router, history_router, resume_router
+from .routers import (
+    analysis_router,
+    auth_router,
+    history_router,
+    resume_router,
+    ws_router,
+)
 
 settings = get_settings()
 
@@ -119,6 +125,7 @@ async def root() -> dict:
 
 
 # Register all routers
+app.include_router(auth_router)       # POST /api/v1/auth/{signup,login}, GET /me
 app.include_router(analysis_router)   # POST /api/v1/analyze (HTTP fallback)
 app.include_router(ws_router)         # WS   /api/v1/ws/analyze
 app.include_router(history_router)

@@ -5,7 +5,7 @@ and the Next.js frontend (mirrored in types/api.ts).
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 # ─── Sub-models ──────────────────────────────────────────────────────────────
@@ -120,3 +120,33 @@ class ErrorDetail(BaseModel):
 
 class ErrorResponse(BaseModel):
     detail: ErrorDetail
+
+
+# ─── Auth ────────────────────────────────────────────────────────────────────
+
+class SignupRequest(BaseModel):
+    email: EmailStr
+    # bcrypt only reads the first 72 bytes, so cap the input rather than let two
+    # different long passwords open the same account.
+    password: str = Field(min_length=8, max_length=72)
+    full_name: str = Field(min_length=2, max_length=120)
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=72)
+
+
+class UserOut(BaseModel):
+    id: int
+    email: EmailStr
+    full_name: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    user: UserOut

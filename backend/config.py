@@ -28,8 +28,17 @@ class Settings(BaseSettings):
     # Jina AI (free embeddings fallback — 1M tokens/month)
     jina_api_key: str = ""
 
-    # Groq (free generation fallback — llama-3.3-70b-versatile)
+    # Groq (free generation fallback)
     groq_api_key: str = ""
+
+    # Groq retires hosted models on a rolling basis — llama-3.3-70b-versatile
+    # was decommissioned and every request 503'd against a hardcoded name.
+    # Overridable so a retirement is an env change, not a code change.
+    # Current list: https://console.groq.com/docs/models
+    groq_model: str = "openai/gpt-oss-120b"
+
+    # Jina embedding model
+    jina_model: str = "jina-embeddings-v3"
 
     # CORS
     allowed_origins: str = "http://localhost:3000"
@@ -46,6 +55,13 @@ class Settings(BaseSettings):
     # App
     environment: str = "development"
     log_level: str = "INFO"
+
+    # ── Auth ──────────────────────────────────────────────────────────────────
+    # Signs the JWTs handed to the browser. MUST be overridden in production —
+    # anyone holding this value can mint a token for any account.
+    secret_key: str = "CHANGE_ME_IN_PRODUCTION"
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60 * 24 * 7  # a week; this is not a bank
 
     # ── Deployment ────────────────────────────────────────────────────────────
     # Hosts TrustedHostMiddleware will accept in production. Comma-separated.

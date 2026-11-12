@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { AuthProvider } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "AlignAI — Semantic Resume Matcher",
@@ -7,7 +8,7 @@ export const metadata: Metadata = {
     "AI-powered resume analysis that computes semantic similarity, identifies skill gaps, and generates an ATS-optimised resume tailored to your target role.",
   keywords: ["resume", "ATS", "job matching", "AI", "career", "semantic search"],
   authors: [{ name: "AlignAI" }],
-  robots: "noindex, nofollow",
+  robots: "index, follow",
 };
 
 export const viewport: Viewport = {
@@ -26,7 +27,9 @@ export default function RootLayout({
         {/* Ambient background */}
         <div className="bg-mesh" aria-hidden="true" />
         {/* Content */}
-        <div className="relative z-10">{children}</div>
+        <AuthProvider>
+          <div className="relative z-10">{children}</div>
+        </AuthProvider>
       </body>
     </html>
   );
